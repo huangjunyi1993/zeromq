@@ -1,5 +1,9 @@
 package com.huangjunyi1993.zeromq.base.entity;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
 import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.ACK_SUCCESS;
 
 /**
@@ -69,4 +73,5 @@ public class ZeroAck implements Ack {
                 ", success=" + success +
                 '}';
     }
+
 }

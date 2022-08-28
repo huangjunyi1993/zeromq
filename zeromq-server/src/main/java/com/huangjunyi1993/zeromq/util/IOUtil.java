@@ -71,10 +71,6 @@ public class IOUtil {
         mappedByteBuffer.position(indexCommand.getWritePosition());
         mappedByteBuffer.putLong(indexCommand.getOffset());
         mappedByteBuffer.force();
-
-        FileWriter writer = new FileWriter("D:/zero/write_index.txt",true);
-        writer.write(indexCommand.getOffset() + "\n");
-        writer.close();
     }
 
     /**

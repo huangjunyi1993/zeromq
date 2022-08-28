@@ -1,5 +1,6 @@
 package com.huangjunyi1993.zeromq.base.entity;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -42,5 +43,13 @@ public class ZeroMessage implements Message {
     @Override
     public void setBody(byte[] body) {
         this.body = body;
+    }
+
+    @Override
+    public String toString() {
+        return "ZeroMessage{" +
+                "head=" + head +
+                ", body=" + Arrays.toString(body) +
+                '}';
     }
 }

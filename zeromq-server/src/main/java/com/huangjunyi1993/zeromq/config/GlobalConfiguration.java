@@ -78,14 +78,20 @@ public class GlobalConfiguration {
                     if (properties == null) {
                         globalConfiguration = new GlobalConfiguration(DEFAULT_PORT, DEFAULT_ZK_URL, getDefaultLogPath(), getDefaultIndexPath(), getDefaultConsumerOffsetPath());
                     } else {
-                        int port = Integer.valueOf(properties.getProperty(PORT));
-                        String zkurl = properties.getProperty(ZK_URL);
+                        int port = DEFAULT_PORT;
+                        String zkurl = DEFAULT_ZK_URL;
                         String logPath = properties.getProperty(LOG_PATH);
                         String consumerOffsetPath = properties.getProperty(CONSUMER_OFFSET_PATH);
+                        String indexPath = properties.getProperty(INDEX_PATH);
+                        if (properties.getProperty(PORT) != null) {
+                            port = Integer.valueOf(properties.getProperty(PORT));
+                        }
+                        if (properties.getProperty(ZK_URL) != null) {
+                            zkurl = properties.getProperty(ZK_URL);
+                        }
                         if (logPath == null) {
                             logPath = getDefaultLogPath();
                         }
-                        String indexPath = properties.getProperty(INDEX_PATH);
                         if (indexPath == null) {
                             indexPath = getDefaultIndexPath();
                         }

@@ -1,6 +1,7 @@
 package com.huangjunyi1993.zeromq.base.protocol;
 
 import java.io.Serializable;
+import java.util.Arrays;
 
 /**
  * 协议包对象，客户端与服务端直接传递接收的是协议包对象
@@ -46,5 +47,16 @@ public class ZeroProtocol implements Serializable{
 
     public long getId() {
         return id;
+    }
+
+    @Override
+    public String toString() {
+        return "ZeroProtocol{" +
+                "len=" + len +
+                ", serializationType=" + serializationType +
+                ", messageType=" + messageType +
+                ", id=" + id +
+                ", body=" + Arrays.toString(body) +
+                '}';
     }
 }

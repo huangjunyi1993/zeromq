@@ -88,10 +88,10 @@ public class FileUtil {
      */
     public static String createTopicDirAndNewFIle(String dir, String topic, String suffix, long length) throws IOException {
         String topicDirPath = dir + File.separator + topic;
-        Path path = Paths.get(dir + File.separator + topic);
+        Path path = Paths.get(topicDirPath);
         boolean pathExists = Files.exists(path, LinkOption.NOFOLLOW_LINKS);
         if (!pathExists) {
-            Files.createDirectory(path);
+            Files.createDirectories(path);
         }
         String filePath = topicDirPath + File.separator + 0 + "." + suffix;
         RandomAccessFile r = null;

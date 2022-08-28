@@ -45,8 +45,8 @@ public class ProducerTest {
                 zeroMessage2.setBody(hessian2Serializer.serialize("world" + j++));
             }
 
-            zeroProducer.sendMessage(zeroMessage1);
-            zeroProducer.sendMessage(zeroMessage2);
+            zeroProducer.sendMessageAsync(zeroMessage1, response -> System.out.println("=====================> received response" + response));
+            zeroProducer.sendMessageAsync(zeroMessage2, response -> System.out.println("=====================> received response" + response));
 
             k++;
         }

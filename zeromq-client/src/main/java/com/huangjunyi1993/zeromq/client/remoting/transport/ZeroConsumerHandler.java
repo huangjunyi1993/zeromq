@@ -10,6 +10,7 @@ import com.huangjunyi1993.zeromq.base.serializer.Serializer;
 import com.huangjunyi1993.zeromq.base.serializer.SerializerFactory;
 import com.huangjunyi1993.zeromq.client.consumer.AbstractConsumerBootStrap;
 import com.huangjunyi1993.zeromq.client.remoting.support.ZeroFuture;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import org.slf4j.Logger;
@@ -29,6 +30,7 @@ import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.RESPONSE;
  * 消费者客户端处理器
  * Created by huangjunyi on 2022/8/19.
  */
+@ChannelHandler.Sharable
 public class ZeroConsumerHandler extends SimpleChannelInboundHandler<ZeroProtocol> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroConsumerHandler.class);

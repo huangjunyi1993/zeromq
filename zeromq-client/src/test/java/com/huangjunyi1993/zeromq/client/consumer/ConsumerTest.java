@@ -12,9 +12,8 @@ public class ConsumerTest {
     @Test
     public void test() throws Exception {
         ConsumerConfig consumerConfig = new ConsumerConfig();
-        int id = 1;
-        consumerConfig.setGroupId(id);
-        consumerConfig.setConsumerId(id);
+        consumerConfig.setGroupId(1);
+        consumerConfig.setConsumerId(1);
         consumerConfig.setBatch(100);
         ZeroConsumerBootstrap zeroConsumerBootstrap = new ZeroConsumerBootstrap(consumerConfig);
         zeroConsumerBootstrap.register("hello", PrintlnConsumer.class);
