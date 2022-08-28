@@ -1,0 +1,2 @@
+com.huangjunyi1993.zeromq.base.serializer.JDKNativeSerializer
+com.huangjunyi1993.zeromq.base.serializer.Hessian2Serializer
