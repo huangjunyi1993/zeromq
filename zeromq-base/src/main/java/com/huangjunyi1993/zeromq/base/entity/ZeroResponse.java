@@ -9,12 +9,26 @@ import java.util.List;
 public class ZeroResponse<T> implements Response<T> {
 
     private static final long serialVersionUID = 5350488331393875683L;
+
+    // 是否成功
     private boolean success;
+
+    // 是否为ACK
     private boolean isAck;
+
+    // 错误码
     private int errorCode;
+
+    // 错误信息
     private String errorMessage;
+
+    // 响应id，与客户端发送过来的id一致
     private long id;
+
+    // 消费偏移量
     private long offset;
+
+    // 响应体（如果是对消息请求的响应，就是请求的消息）
     private List<T> data;
 
     public ZeroResponse(boolean success, int errorCode, String errorMessage, long id, long offset, List<T> data, boolean isAck) {

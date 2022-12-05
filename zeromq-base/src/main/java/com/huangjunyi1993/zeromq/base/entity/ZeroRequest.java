@@ -7,11 +7,23 @@ package com.huangjunyi1993.zeromq.base.entity;
 public class ZeroRequest implements Request {
 
     private static final long serialVersionUID = 310723464624101022L;
+
+    // 请求id
     private long id;
+
+    // 请求的消息主题
     private String topic;
+
+    // 消费者组
     private int consumerGroupId;
+
+    // 消费者id
     private int consumerId;
+
+    // 批次大小
     private int batch;
+
+    // 序列化类型
     private int serializationType;
 
     public ZeroRequest(long id, String topic, int consumerGroupId, int consumerId, int batch, int serializationType) {

@@ -14,6 +14,7 @@ public class ZeroProtocalDecoder extends ReplayingDecoder<Void> {
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         if (in.readableBytes() >= 20) {
+            // 根据协议解码成协议对象
             int len = in.readInt();
             int serializationType = in.readInt();
             int messageType = in.readInt();

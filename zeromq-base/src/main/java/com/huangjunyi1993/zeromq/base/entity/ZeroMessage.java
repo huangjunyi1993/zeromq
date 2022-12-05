@@ -12,8 +12,10 @@ public class ZeroMessage implements Message {
 
     private static final long serialVersionUID = -2832236042734725280L;
 
+    // 消息头
     private Map<String, Object> head;
 
+    // 消息体
     private byte[] body;
 
     public ZeroMessage() {

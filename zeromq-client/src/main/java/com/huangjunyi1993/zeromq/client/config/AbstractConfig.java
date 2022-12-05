@@ -12,13 +12,18 @@ import java.util.Objects;
  */
 public abstract class AbstractConfig {
 
+    /**
+     * 默认配置
+     */
     public AbstractConfig() {
         zkUrl = "localhost:2181";
         timeout = 0L;
     }
 
+    // zk地址
     protected String zkUrl;
 
+    // 处理器
     protected List<ChannelHandler> channelHandlers;
 
     private long timeout;

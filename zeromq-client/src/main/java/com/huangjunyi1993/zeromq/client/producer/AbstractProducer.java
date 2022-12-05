@@ -39,22 +39,32 @@ import static com.huangjunyi1993.zeromq.base.enums.SerializationTypeEnum.JDK_NAT
  */
 public abstract class AbstractProducer implements Producer {
 
+    // 消息id生成器
     private static AtomicLong MESSAGE_ID_GENERATOR = new AtomicLong();
 
+    // 全局配置
     private final AbstractConfig config;
 
+    // zk客户端
     private CuratorFramework zkCli;
 
+    // netty客户端
     private NettyClient nettyClient;
 
+    // 服务端url列表
     private List<BrokerServerUrl> brokerServerUrlList = new CopyOnWriteArrayList<>();
 
+    // 计数器表，topic => 计数器
     private Map<String, AtomicInteger> TOPIC_COUNTER_MAP = new ConcurrentHashMap<>();
 
     public AbstractProducer(AbstractConfig config) {
+        // 保存全局配置
         this.config = config;
+        // 创建zk客户端
         this.zkCli = CuratorFrameworkFactory.newClient(config.getZkUrl(), new ExponentialBackoffRetry(5000, 30));
+        // 开启key客户端
         this.zkCli.start();
+        // 开启netty客户端
         this.nettyClient = NettyClient.open(config);
     }
 
@@ -71,30 +81,40 @@ public abstract class AbstractProducer implements Producer {
     private boolean sendMessage(Message message, ProducerListener producerListener, boolean isAsync) {
 
         if (message.getHead(MESSAGE_HEAD_ID) == null) {
+            // 生成默认的消息id
             message.putHead(MESSAGE_HEAD_ID, MESSAGE_ID_GENERATOR.getAndIncrement());
         }
 
         if (message.getHead(MESSAGE_HEAD_TOPIC) == null) {
+            // 默认的topic
             message.putHead(MESSAGE_HEAD_TOPIC, TOPIC_DEFAULT);
         }
 
+        // 发送消息前置处理
         preSendMessage(message);
 
+        // 发送消息响应结果
         final Response[] response = new Response[1];
 
         try {
+            // 根据topic和routingKey，进行消息路由，确定目标Broker
             BrokerServerUrl url = routing((String) message.getHead(MESSAGE_HEAD_TOPIC), (String) message.getHead(MESSAGE_HEAD_ROUTING_KEY));
+            // 获取连接到对应服务器的IO通道
             Channel channel = nettyClient.getChannel(url);
+            // 创建一个回执，回执会缓存到全局回执表
             ZeroFuture zeroFuture = ZeroFuture.newProducerFuture(message);
+            // 真正发送消息
             doSendMessage(channel, message);
 
             if (isAsync && producerListener != null) {
+                // 异步发送
                 zeroFuture.thenAccept(result -> {
                     response[0] = (Response) result;
                     producerListener.onResponse(response[0]);
                 });
                 return true;
             } else {
+                // 阻塞式发送
                 long timeout = this.config.getTimeout();
                 Object result = timeout > 0L ? zeroFuture.get(timeout, TimeUnit.MILLISECONDS) : zeroFuture.get();
                 response[0] = (Response) result;
@@ -104,14 +124,18 @@ public abstract class AbstractProducer implements Producer {
                 return false;
             }
         } catch (Exception e) {
+            // 发送消息发生错误
             postOnError(message, response[0], e);
             return false;
         } finally {
+            // 消息发送完成
             postResponseReceived(message, response[0]);
         }
     }
 
     private void doSendMessage(Channel channel, Message message) throws IOException {
+
+        // 确定要使用的序列化协议，默认是JDK原生序列化协议
         int serializationType = JDK_NATIVE_SERIALIZATION.getType();
         if (message.getHead(MESSAGE_HEAD_SERIALIZATION_TYPE) != null) {
             serializationType = (int) message.getHead(MESSAGE_HEAD_SERIALIZATION_TYPE);
@@ -119,28 +143,45 @@ public abstract class AbstractProducer implements Producer {
             message.putHead(MESSAGE_HEAD_SERIALIZATION_TYPE, serializationType);
         }
 
+        // 从序列化器工厂获取一个序列化器
         Serializer serializer = SerializerFactory.getSerializer(serializationType);
+        // 使用序列化器，进行消息序列化
         byte[] bytes = serializer.serialize(message);
 
+        // 组装成协议对象
         ZeroProtocol protocol = new ZeroProtocol(bytes.length, serializationType, MESSAGE.getType(), (long)message.getHead(MESSAGE_HEAD_ID), bytes);
+        // 发送数据到IO通道
         channel.writeAndFlush(protocol);
     }
 
+    // 模板方法，消息发送错误后置处理
     protected abstract void postOnError(Message message, Response response, Exception e);
 
+    // 模板方法，消息发送后置处理
     protected abstract void postResponseReceived(Message message, Response response);
 
+    // 模板方法，消息发送前置处理
     protected abstract void preSendMessage(Message message);
 
+    /**
+     * 消息路由
+     * @param topic 消息topic
+     * @param routingKey 路由键
+     * @return
+     */
     protected BrokerServerUrl routing(String topic, String routingKey) {
+
+        // 服务器Url列表为空，从zk中拉取
         if (this.brokerServerUrlList == null || this.brokerServerUrlList.size() == 0) {
             this.brokerServerUrlList = getBrokerServerUrlListFromZK();
         }
 
+        // 路由键不为空，根据路由键hash取模，确定目标Broker
         if (routingKey != null && !"".equals(routingKey)) {
             return this.brokerServerUrlList.get(routingKey.hashCode() % brokerServerUrlList.size());
         }
 
+        // 路由键为空，轮询
         return getBrokerServerUrlRoundRobin(topic, brokerServerUrlList);
     }
 
@@ -149,12 +190,23 @@ public abstract class AbstractProducer implements Producer {
         return brokerServerUrlList.get(counter.getAndIncrement() % brokerServerUrlList.size());
     }
 
+    /**
+     * 从zk拉取服务器列表
+     * @return
+     */
     private List<BrokerServerUrl> getBrokerServerUrlListFromZK() {
         try {
+
+            // 从zk拉取服务器信息
             String path = "/brokers";
             byte[] bytes = zkCli.getData().forPath(path);
+
+            // 更新服务器列表
             List<BrokerServerUrl> brokerServerUrlList = updateBrokerServerUrls(bytes);
+
+            // 重新注册监听
             addWatcher(path);
+
             return brokerServerUrlList;
         } catch (Exception e) {
             throw new ProducerException("Failed to obtain broker server url");
@@ -166,6 +218,7 @@ public abstract class AbstractProducer implements Producer {
         nodeCache.start();
         nodeCache.getListenable().addListener(() -> {
             if (nodeCache.getCurrentData() != null) {
+                // 监听节点发生变化，重新拉取服务器信息，进行更新操作
                 byte[] bytes = nodeCache.getCurrentData().getData();
                 updateBrokerServerUrls(bytes);
             }
@@ -173,12 +226,19 @@ public abstract class AbstractProducer implements Producer {
     }
 
     private List<BrokerServerUrl> updateBrokerServerUrls(byte[] bytes) {
+        // 解析服务器列表
         List<BrokerServerUrl> newBrokerServerUrlList = ClientUtil.parseBrokerServerUrls(bytes);
 
-        List<BrokerServerUrl> oldBrokerServerUrlList = this.brokerServerUrlList.stream().filter(newBrokerServerUrlList::contains).collect(Collectors.toList());
+        // 过滤出当前的服务器列表中，需要保留的服务器
+        List<BrokerServerUrl> oldBrokerServerUrlList = this.brokerServerUrlList.stream()
+                .filter(newBrokerServerUrlList::contains).collect(Collectors.toList());
+
+        // 现清空服务器列表
         this.brokerServerUrlList.clear();
         this.brokerServerUrlList.addAll(oldBrokerServerUrlList);
-        this.brokerServerUrlList.addAll(newBrokerServerUrlList.stream().filter(brokerServerUrl -> !this.brokerServerUrlList.contains(brokerServerUrl)).collect(Collectors.toList()));
+        this.brokerServerUrlList.addAll(newBrokerServerUrlList.stream()
+                .filter(brokerServerUrl -> !this.brokerServerUrlList.contains(brokerServerUrl))
+                .collect(Collectors.toList()));
 
         return this.brokerServerUrlList;
     }

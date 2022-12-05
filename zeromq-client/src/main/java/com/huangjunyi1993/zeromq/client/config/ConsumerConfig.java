@@ -8,14 +8,19 @@ import static com.huangjunyi1993.zeromq.base.enums.SerializationTypeEnum.JDK_NAT
  */
 public class ConsumerConfig extends AbstractConfig {
 
+    // 没有消息是等待的时间
     private long waitOnNoMessage;
 
+    // 消费者组id
     private int groupId;
 
+    // 消费者id
     private int consumerId;
 
+    // 批次大小
     private int batch;
 
+    // 序列化类型
     private int serializationType;
 
     public ConsumerConfig() {

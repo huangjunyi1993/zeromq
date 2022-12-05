@@ -8,10 +8,19 @@ import java.io.IOException;
  */
 public interface Serializer {
 
+    /**
+     * 发序列化
+     */
     <T> T deserialize(byte[] bytes) throws IOException, ClassNotFoundException;
 
+    /**
+     * 序列化
+     */
     <T> byte[] serialize(T t) throws IOException;
 
+    /**
+     * 序列化类型
+     */
     int getType();
 
 }

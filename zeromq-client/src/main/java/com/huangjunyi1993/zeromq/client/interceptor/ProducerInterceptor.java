@@ -9,12 +9,31 @@ import com.huangjunyi1993.zeromq.base.entity.Response;
  */
 public interface ProducerInterceptor {
 
+    /**
+     * 拦截器排序
+     * @return
+     */
     int order();
 
+    /**
+     * 发送消息发生错误后置拦截
+     * @param message
+     * @param response
+     * @param e
+     */
     void postOnError(Message message, Response response, Exception e);
 
+    /**
+     * 发送消息后置拦截
+     * @param message
+     * @param response
+     */
     void postResponseReceived(Message message, Response response);
 
+    /**
+     * 消息发送前置拦截
+     * @param message
+     */
     void preSendMessage(Message message);
 
 }

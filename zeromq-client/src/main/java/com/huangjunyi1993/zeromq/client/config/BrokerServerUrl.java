@@ -6,8 +6,10 @@ package com.huangjunyi1993.zeromq.client.config;
  */
 public class BrokerServerUrl {
 
+    // ip或域名
     private String host;
 
+    // 端口
     private int port;
 
     public BrokerServerUrl(String host, int port) {

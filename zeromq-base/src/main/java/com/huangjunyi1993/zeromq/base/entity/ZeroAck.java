@@ -13,11 +13,23 @@ import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.ACK_SUCCES
 public class ZeroAck implements Ack {
 
     private static final long serialVersionUID = -6734648248126286782L;
+
+    // 消费偏移量
     private long offset;
+
+    // 消息主题
     private String topic;
+
+    // 消费者组id
     private int consumerGroupId;
+
+    // 消费者id
     private int consumerId;
+
+    // 序列化类型
     private int serializationType;
+
+    // 是否消费成功
     private int success;
 
     public ZeroAck(long offset, String topic, int consumerGroupId, int consumerId, int serializationType, int success) {

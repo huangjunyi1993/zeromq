@@ -14,6 +14,10 @@ public class ZeroConsumerBootstrap extends BaseConsumerBootStrap {
         this.config = config;
     }
 
+    /**
+     * 创建默认的消费者客户端启动器
+     * @return
+     */
     public static ZeroConsumerBootstrap newDefaultConsumerBootstrap() {
         ConsumerConfig config = new ConsumerConfig();
         ZeroConsumerBootstrap zeroConsumerBootstrap = new ZeroConsumerBootstrap(config);

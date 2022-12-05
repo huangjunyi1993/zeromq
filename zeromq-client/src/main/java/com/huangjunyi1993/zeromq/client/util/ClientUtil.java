@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 客户单工具类
+ * 客户端工具类
  * Created by huangjunyi on 2022/8/14.
  */
 public class ClientUtil {
@@ -19,6 +19,7 @@ public class ClientUtil {
      */
     public static List<BrokerServerUrl> parseBrokerServerUrls(byte[] bytes) {
         String string = new String(bytes);
+        // zk存储的服务器信息：ip:port,ip:port,ip:port
         String[] brokerServerUrls = string.split(",");
         return Arrays.stream(brokerServerUrls).map(brokerServerUrl -> {
             String[] strings = brokerServerUrl.split(":");

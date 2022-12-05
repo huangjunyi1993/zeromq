@@ -35,18 +35,23 @@ public class ZeroConsumerHandler extends SimpleChannelInboundHandler<ZeroProtoco
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroConsumerHandler.class);
 
+    // 消费者启动引导器
     private AbstractConsumerBootStrap consumerBootStrap;
 
     public ZeroConsumerHandler(AbstractConsumerBootStrap consumerBootStrap) {
+        // 保存引导器
         this.consumerBootStrap = consumerBootStrap;
     }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, ZeroProtocol protocol) throws Exception {
         if (protocol.getLen() > 0 && RESPONSE.getType() == protocol.getMessageType()) {
+
+            // 根据协议报文中的序列化类型，进行发序列化
             Serializer serializer = SerializerFactory.getSerializer(protocol.getSerializationType());
             Response<Message> response = serializer.deserialize(protocol.getBody());
 
+            // ack类型响应
             if (response.isAck()) {
                 ZeroFuture.received(response);
                 return;
@@ -54,8 +59,10 @@ public class ZeroConsumerHandler extends SimpleChannelInboundHandler<ZeroProtoco
 
             ctx.executor().submit(() -> {
 
+                // 消息拉取失败？
                 if (!response.isSuccess()) {
                     LOGGER.info("fetch message failed: {}", response.errorMessage());
+                    // 没有消息了
                     if (NO_CONSUMABLE_NEWS.getCode() == response.errorCode()) {
                         ctx.executor().schedule(() -> {
                             ZeroFuture.removeRequest(response.getId());
@@ -63,6 +70,7 @@ public class ZeroConsumerHandler extends SimpleChannelInboundHandler<ZeroProtoco
                         }, 1, TimeUnit.SECONDS);
                         return;
                     }
+
                     ZeroFuture.removeRequest(response.getId());
                     ZeroFuture.received(response);
                     return;
@@ -71,19 +79,27 @@ public class ZeroConsumerHandler extends SimpleChannelInboundHandler<ZeroProtoco
                 long offset = response.getOffset();
                 List<Message> messages = response.getData();
                 for (Message message : messages) {
+                    // 回调顶层消费者（消费者启动器），分发任务
                     if (!consumerBootStrap.onMessage(message)) {
                         break;
                     }
+                    // 偏移量++
                     offset++;
                 }
-                //回送ack
+
+                // 回送ack
+                // 取出全局请求信息表中对应的请求信息
                 Request request = ZeroFuture.removeRequest(response.getId());
+                // 请求信息记录了topic、groupId等，服务端更新offset需要
                 ZeroAck ack = ZeroAck.success(offset, request.getTopic(), request.getConsumerGroupId(), request.getConsumerId(), request.getSerializationType());
                 Serializer serializer1;
                 try {
+                    // 序列化
                     serializer1 = SerializerFactory.getSerializer(request.getSerializationType());
                     byte[] bytes = serializer1.serialize(ack);
+                    // 包装为协议报文对象
                     ZeroProtocol protocol1 = new ZeroProtocol(bytes.length, request.getSerializationType(), ACK.getType(), response.getId(), bytes);
+                    // 发送数据到通道
                     ctx.channel().writeAndFlush(protocol1);
                 } catch (Exception e) {
                     throw new ConsumerException("send ack happen error", e);
