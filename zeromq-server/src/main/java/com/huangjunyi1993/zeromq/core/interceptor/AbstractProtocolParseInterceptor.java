@@ -31,10 +31,14 @@ public abstract class AbstractProtocolParseInterceptor implements Interceptor {
     public void pre(Context context) {
         ZeroProtocol protocal = context.getProtocal();
 
+        // 设置协议报文长度到上下文变量表
         context.setVariable(CONTEXT_VARIABLE_BODY_LEN, protocal.getLen());
+        // 设置协议报文id到上下文变量表
         context.setVariable(CONTEXT_VARIABLE_ID, protocal.getId());
+        // 设置消息类型到上下文变量表
         context.setVariable(CONTEXT_VARIABLE_MESSAGE_TYPE, protocal.getMessageType());
 
+        // 消息体
         byte[] body = protocal.getBody();
         if (body == null || body.length == 0) {
             LOGGER.info("The protocol body cannot be empty");
@@ -44,10 +48,17 @@ public abstract class AbstractProtocolParseInterceptor implements Interceptor {
         }
         context.setVariable(CONTEXT_VARIABLE_BODY, body);
 
+        // 序列化类型
         int serializationType = protocal.getSerializationType();
         context.setVariable(CONTEXT_VARIABLE_SERIALIZATION_TYPE, serializationType);
     }
 
+    /**
+     * 协议报文体反序列化
+     * @param context
+     * @param <T>
+     * @return
+     */
     protected <T> T deserialize(Context context){
         try {
             ZeroProtocol protocal = context.getProtocal();

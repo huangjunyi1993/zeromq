@@ -38,6 +38,8 @@ public class FileUtil {
         boolean pathExists = Files.exists(path, LinkOption.NOFOLLOW_LINKS);
 
         if (pathExists) {
+
+            // 过滤出文件名，并转成代表偏移量Long类型的
             List<Long> fileNames = Files.list(path)
                     .map(Path::getFileName)
                     .map(Path::toString)
@@ -45,11 +47,13 @@ public class FileUtil {
                     .map(Long::parseLong)
                     .collect(Collectors.toList());
 
+            // 过滤出最大的偏移量，就是最新的文件名
             long max = fileNames.get(0);
             for (long fileName : fileNames) {
                 max = Math.max(max, fileName);
             }
 
+            // 文件夹路径 + 文件名 + 后缀
             return dir + File.separator + max + "." + suffix;
         }
         return null;
@@ -194,8 +198,10 @@ public class FileUtil {
                     .map(Long::parseLong)
                     .collect(Collectors.toList());
 
+            // 从大到小排序
             fileNames.sort((o1, o2) -> (int)(o2 - o1));
             for (Long fileName : fileNames) {
+                // 从大到小遍历，文件名第一个小于给定日志偏移量的，就是目标文件
                 if (fileName <= messageLogOffset) {
                     return dir + File.separator + fileName + ".log";
                 }

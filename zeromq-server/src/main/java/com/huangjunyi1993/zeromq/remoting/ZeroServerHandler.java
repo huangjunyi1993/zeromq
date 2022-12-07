@@ -34,14 +34,19 @@ public class ZeroServerHandler extends SimpleChannelInboundHandler<ZeroProtocol>
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, ZeroProtocol protocol) throws Exception {
+        // 异步处理请求
         ctx.channel().eventLoop().submit(() -> {
             boolean handleSuccess = true;
             Context context = null;
             try {
+                // 处理器工厂
                 HandlerFactory handlerFactory = ZeroHandlerFactory.getInstance();
+                // 创建处理器,如果已经创建会重用，返回的是处理器链
                 Handler handler = handlerFactory.build(protocol);
+                // 上下文对象：上处理器链中传递 协议对象 变量表
                 context = new ZeroContext();
                 context.setProtocal(protocol);
+                // 处理器链执行
                 handler.handle(context);
                 if (context.getVariable(CONTEXT_VARIABLE_HANDLE_SUCCESS) != null) {
                     handleSuccess = (boolean) context.getVariable(CONTEXT_VARIABLE_HANDLE_SUCCESS);

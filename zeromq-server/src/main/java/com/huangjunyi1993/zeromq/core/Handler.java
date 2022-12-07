@@ -8,8 +8,10 @@ import com.huangjunyi1993.zeromq.base.Context;
  */
 public interface Handler {
 
+    // 处理逻辑
     void handle(Context context);
 
+    // 该处理器适配的消息类型
     int messageType();
 
 }

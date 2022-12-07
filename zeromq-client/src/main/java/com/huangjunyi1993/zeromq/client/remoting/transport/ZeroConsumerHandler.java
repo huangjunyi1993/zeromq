@@ -57,6 +57,7 @@ public class ZeroConsumerHandler extends SimpleChannelInboundHandler<ZeroProtoco
                 return;
             }
 
+            // 异步执行消息消费
             ctx.executor().submit(() -> {
 
                 // 消息拉取失败？

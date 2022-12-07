@@ -19,20 +19,27 @@ public class GlobalConfiguration {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(GlobalConfiguration.class);
 
+    // 服务器端口
     private int port;
 
+    // zk集群地址
     private String zkUrl;
 
+    // 消息日志存储路径
     private String logPath;
 
+    // 消息索引存储路径
     private String indexPath;
 
+    // 消费偏移量信息存储路径
     private String consumerOffsetPath;
 
+    // 单个日志长度，默认1M大小
     private long maxLogFileSize = 1024 * 1024L;
 
     private long consumerOffsetSyncInterval = -1L;
 
+    // 单例
     private volatile static GlobalConfiguration globalConfiguration;
 
     private GlobalConfiguration(int port, String zkUrl, String logPath, String indexPath, String consumerOffsetPath){
@@ -71,34 +78,48 @@ public class GlobalConfiguration {
         return consumerOffsetPath;
     }
 
+    /**
+     * 服务端全局配置初始化
+     * @param properties 配置信息
+     * @return
+     */
     public static GlobalConfiguration init(Properties properties) {
         if (globalConfiguration == null) {
             synchronized (GlobalConfiguration.class) {
                 if (globalConfiguration == null) {
                     if (properties == null) {
+                        // 没有指定配置文件，创建默认全局配置对象
                         globalConfiguration = new GlobalConfiguration(DEFAULT_PORT, DEFAULT_ZK_URL, getDefaultLogPath(), getDefaultIndexPath(), getDefaultConsumerOffsetPath());
                     } else {
+                        // 指定了配置文件
                         int port = DEFAULT_PORT;
                         String zkurl = DEFAULT_ZK_URL;
                         String logPath = properties.getProperty(LOG_PATH);
                         String consumerOffsetPath = properties.getProperty(CONSUMER_OFFSET_PATH);
                         String indexPath = properties.getProperty(INDEX_PATH);
+                        // 端口
                         if (properties.getProperty(PORT) != null) {
                             port = Integer.valueOf(properties.getProperty(PORT));
                         }
+                        // zk地址
                         if (properties.getProperty(ZK_URL) != null) {
                             zkurl = properties.getProperty(ZK_URL);
                         }
+                        // 消息日志存储路径
                         if (logPath == null) {
                             logPath = getDefaultLogPath();
                         }
+                        // 消息索引存储路径
                         if (indexPath == null) {
                             indexPath = getDefaultIndexPath();
                         }
+                        // 消费偏移量文件存储路径
                         if (consumerOffsetPath == null) {
                             consumerOffsetPath = getDefaultConsumerOffsetPath();
                         }
+                        // 创建全局配置对象
                         globalConfiguration = new GlobalConfiguration(port, zkurl, logPath, indexPath, consumerOffsetPath);
+                        // 最大日志长度
                         if (properties.getProperty(MAX_LOG_FILE_SIZE) != null) {
                             try {
                                 long maxLogFileSize = Long.parseLong(properties.getProperty(MAX_LOG_FILE_SIZE));

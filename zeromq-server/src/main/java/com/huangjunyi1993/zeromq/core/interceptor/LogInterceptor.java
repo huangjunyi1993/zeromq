@@ -16,21 +16,25 @@ public class LogInterceptor implements Interceptor {
 
     @Override
     public boolean support(Handler handler) {
+        // 所有处理器都适配
         return true;
     }
 
     @Override
     public void pre(Context context) {
+        // 打印请求信息
         LOGGER.info("handler the client request: context={}", context.toString());
     }
 
     @Override
     public void after(Context context) {
+        // 打印处理结果
         LOGGER.info("handler the client request over: context={}", context.toString());
     }
 
     @Override
     public int order() {
+        // 最先执行
         return 0;
     }
 }

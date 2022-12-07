@@ -30,6 +30,7 @@ public class ProducerProtocolParseInterceptor extends AbstractProtocolParseInter
     public void pre(Context context) {
         super.pre(context);
 
+        //反序列化报文体
         Message message = deserialize(context);
         context.setVariable(CONTEXT_VARIABLE_MESSAGE, message);
 
@@ -37,6 +38,8 @@ public class ProducerProtocolParseInterceptor extends AbstractProtocolParseInter
         if (message.getHead(MESSAGE_HEAD_ID) == null) {
             message.putHead(MESSAGE_HEAD_ID, protocal.getId());
         }
+
+        // 消息id
         if ((long) message.getHead(MESSAGE_HEAD_ID) != protocal.getId()) {
             LOGGER.info("The message ID is inconsistent with the protocol header ID: messageId={}, protocalHeadId={}", message.getHead(MESSAGE_HEAD_ID), protocal.getId());
             context.setVariable(CONTEXT_VARIABLE_ERROR_CODE, ID_NOT_CONSISTENT.getCode());
@@ -45,9 +48,12 @@ public class ProducerProtocolParseInterceptor extends AbstractProtocolParseInter
             throw new ServerHandleException("The message ID is inconsistent with the protocol header ID");
         }
 
+        // 消息头不包含序列化类型，设置序列化类型到消息头
         if (message.getHead(MESSAGE_HEAD_SERIALIZATION_TYPE) == null) {
             message.putHead(MESSAGE_HEAD_SERIALIZATION_TYPE, protocal.getSerializationType());
         }
+
+        // 消息头设置的序列化类型，是否和协议报文一致
         if ((int) message.getHead(MESSAGE_HEAD_SERIALIZATION_TYPE) != protocal.getSerializationType()) {
             LOGGER.info("The message serialization type is inconsistent: message={}, protocal={}", message.getHead(MESSAGE_HEAD_SERIALIZATION_TYPE), protocal.getSerializationType());
             context.setVariable(CONTEXT_VARIABLE_ERROR_CODE, SERIALIZATION_TYPE_NOT_CONSISTENT.getCode());
@@ -56,6 +62,7 @@ public class ProducerProtocolParseInterceptor extends AbstractProtocolParseInter
             throw new ServerHandleException("The message serialization type is inconsistent");
         }
 
+        // 消息头是否没有指定topic
         if (message.getHead(MESSAGE_HEAD_TOPIC) == null) {
             LOGGER.info("The message topic is null");
             context.setVariable(CONTEXT_VARIABLE_ERROR_CODE, MESSAGE_TOPIC_IS_NULL.getCode());

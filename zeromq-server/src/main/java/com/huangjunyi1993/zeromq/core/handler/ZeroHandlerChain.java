@@ -24,10 +24,13 @@ public class ZeroHandlerChain implements HandlerChain {
     @Override
     public void handle(Context context) {
 
+        // 拦截器链 前置处理
         interceptors.forEach(interceptor -> interceptor.pre(context));
 
+        // 处理器执行
         handler.handle(context);
 
+        // 拦截器链 后置处理
         interceptors.forEach(interceptor -> interceptor.after(context));
 
     }

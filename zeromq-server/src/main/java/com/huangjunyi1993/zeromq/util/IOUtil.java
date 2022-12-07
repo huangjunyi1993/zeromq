@@ -24,7 +24,7 @@ public class IOUtil {
     private static final Logger LOGGER = LoggerFactory.getLogger(IOUtil.class);
 
     /**
-     * 同时吸入消息日志和日志索引
+     * 同时写入消息日志和日志索引
      * @param bytes
      * @param serializationType
      * @param lastFile
@@ -35,12 +35,16 @@ public class IOUtil {
      */
     public static void writeLogAndIndex(byte[] bytes, int serializationType, String lastFile, String lastIndexFile, MappedByteBuffer logBuf, MappedByteBuffer indexBuf, int logPosition) {
         LOGGER.info("==================> {} write the message log {} <==================", Thread.currentThread().getName(), lastFile);
+        // 写入消息日志长度
         logBuf.putInt(bytes.length);
+        // 写入序列化类型
         logBuf.putInt(serializationType);
+        // 写入消息日志数据
         logBuf.put(bytes);
         logBuf.force();
 
         LOGGER.info("==================> {} write the message index {} <==================", Thread.currentThread().getName(), lastIndexFile);
+        // 写入索引记录 日志总偏移量=日志文件名记录的偏移量+日志写入位置
         indexBuf.putLong(FileUtil.getOffsetOfFileName(lastFile) + logPosition);
         indexBuf.force();
     }
@@ -85,29 +89,43 @@ public class IOUtil {
         if (filePath == null || "".equals(filePath)) {
             return messages;
         }
-        FileChannel fileChannel = FileChannel.open(Paths.get(filePath),
-                StandardOpenOption.READ);
+        FileChannel fileChannel = FileChannel.open(Paths.get(filePath), StandardOpenOption.READ);
         LOGGER.info("==================> read message from {}, offset={} <==================", fileChannel, offset);
         for (int i = 0; i < batch; i++) {
+
+            // 读取长度和序列化类型用的buf
             MappedByteBuffer mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset, 8);
+            // 长度
             int len = mappedByteBuffer.getInt();
+            // 凑不够一个批次
             if (len == 0) {
                 return messages;
             }
+            // 序列化类型
             int serializationType = mappedByteBuffer.getInt();
+
+            // 读取消息用的buf
             mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset + 8, len);
             byte[] bytes = new byte[len];
             mappedByteBuffer.get(bytes);
+            // 根据日志记录的序列化类型 获取对应的序列化器 进行序列化
             Serializer serializer = SerializerFactory.getSerializer(serializationType);
             Message message = serializer.deserialize(bytes);
+            // 加入批次
             messages.add(message);
+            // 更新文件内偏移量
             offset = offset + 8 + len;
+
+            // 读到文件尾了
             if (fileChannel.size() <= offset) {
+                // 找下一个文件
                 long offsetOfNextFileName = FileUtil.getOffsetOfFileName(filePath);
+                // 下一个日志文件名 = 当前文件名的偏移量 + 当前文件内偏移量
                 String nextLogFileName = FileUtil.determineTargetLogFile(filePath.substring(0, filePath.lastIndexOf(File.separator)), offsetOfNextFileName + offset);
                 if (nextLogFileName == null || "".equals(nextLogFileName) || filePath.equals(nextLogFileName)) {
                     break;
                 }
+                // 递归读取该批次剩下的
                 messages.addAll(readLog(nextLogFileName, 0, batch - i - 1));
                 break;
             }
@@ -124,8 +142,7 @@ public class IOUtil {
      * @throws IOException
      */
     public static long readIndex(String filePath, long offset) throws IOException {
-        FileChannel fileChannel = FileChannel.open(Paths.get(filePath),
-                StandardOpenOption.READ);
+        FileChannel fileChannel = FileChannel.open(Paths.get(filePath), StandardOpenOption.READ);
         MappedByteBuffer mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, offset * 8L, 8L);
         fileChannel.close();
         long messageLogOffset = mappedByteBuffer.getLong();
@@ -148,8 +165,7 @@ public class IOUtil {
         if (filePath == null || "".equals(filePath)) {
             return;
         }
-        FileChannel fileChannel = FileChannel.open(Paths.get(filePath),
-                StandardOpenOption.WRITE, StandardOpenOption.READ);
+        FileChannel fileChannel = FileChannel.open(Paths.get(filePath), StandardOpenOption.WRITE, StandardOpenOption.READ);
         MappedByteBuffer mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_WRITE, 0, Math.max(bytes.length, fileChannel.size()));
         fileChannel.close();
         mappedByteBuffer.clear();

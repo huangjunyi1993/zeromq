@@ -24,10 +24,14 @@ public class ZeroProducerHandler implements Handler {
 
     @Override
     public void handle(Context context) {
+        // 消息
         byte[] bytes = (byte[]) context.getVariable(CONTEXT_VARIABLE_BODY);
+        // 主题
         String topic = (String) context.getVariable(CONTEXT_VARIABLE_TOPIC);
+        // 序列化类型
         int serializationType = (int) context.getVariable(CONTEXT_VARIABLE_SERIALIZATION_TYPE);
         try {
+            // 一个topic对应一个日志工具类实例 消息持久化到日志文件 并且建立索引
             MessageLogUtil.getMessageLogUtil(topic).writeMessageLog(topic, bytes, serializationType, context);
         } catch (IOException|InterruptedException e) {
             LOGGER.info("An exception occurred while writing a message to the log file: ", e);

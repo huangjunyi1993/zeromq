@@ -32,6 +32,7 @@ public class ConsumerOffsetReadInterceptor implements Interceptor {
 
     private ConsumerOffsetCache consumerOffsetCache;
 
+    // 消费者偏移量文件内存映射表 topic => buf
     private Map<String, MappedByteBuffer> mappedByteBufferMap = new ConcurrentHashMap<>();
 
     public ConsumerOffsetReadInterceptor() {
@@ -45,10 +46,12 @@ public class ConsumerOffsetReadInterceptor implements Interceptor {
 
     @Override
     public void pre(Context context) {
-        // 读取对应消费者对应topic的最新偏移量
+        // 读取对应消费者对应topic的最新偏移量（消费到第几条消息）
         Request request = (Request) context.getVariable(CONTEXT_VARIABLE_REQUEST);
         try {
+            // 该topic对应的消费者偏移量文件名
             String file = GlobalConfiguration.get().getConsumerOffsetPath() + File.separator + request.getTopic() + "_" + request.getConsumerGroupId() + ".txt";
+            // 根据文件名获取对应的内存映射
             MappedByteBuffer map;
             if (!mappedByteBufferMap.containsKey(file)) {
                 map = IOUtil.getMappedByteBuffer(file);
@@ -56,6 +59,7 @@ public class ConsumerOffsetReadInterceptor implements Interceptor {
             } else {
                 map = mappedByteBufferMap.get(file);
             }
+            // 读取偏移量 设置到变量表
             map.position(0);
             long offset = map.getLong();
             context.setVariable(CONTEXT_VARIABLE_CONSUMER_OFFSET, offset);

@@ -37,8 +37,11 @@ public class NettyServer {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel socketChannel) throws Exception {
+                            // 协议编码器
                             socketChannel.pipeline().addLast(new ZeroProtocolEncoder());
+                            // 协议解码器
                             socketChannel.pipeline().addLast(new ZeroProtocalDecoder());
+                            // 服务端处理器
                             socketChannel.pipeline().addLast(new ZeroServerHandler());
                         }
                     });

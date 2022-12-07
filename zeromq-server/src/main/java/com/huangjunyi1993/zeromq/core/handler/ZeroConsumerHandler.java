@@ -36,13 +36,17 @@ public class ZeroConsumerHandler implements Handler {
             Request request = (Request) context.getVariable(CONTEXT_VARIABLE_REQUEST);
             String topic = request.getTopic();
             long consumerOffset = (long) context.getVariable(CONTEXT_VARIABLE_CONSUMER_OFFSET);
+            // 索引文件是一千条索引一个文件，索引除以1000，就是最新的文件名
             long index = consumerOffset / 1000L;
+            // 索引文件内偏移量：在该索引文件中，是第几条索引
             long indexOffset = consumerOffset % 1000L;
+            // 根据消费者偏移量定位索引文件名
             String indexFileName = GlobalConfiguration.get().getIndexPath() + File.separator + topic + File.separator + index + ".index";
             if (!FileUtil.exists(indexFileName) || FileUtil.getFileSize(indexFileName) <= indexOffset * 8L) {
                 handleNoConsumableMessage(context);
                 return;
             }
+            // 根据索引文件名和文件内偏移量，读取消息日志偏移量
             long messageLogOffset = IOUtil.readIndex(indexFileName, indexOffset);
             if (messageLogOffset == 0 && (FileUtil.getOffsetOfFileName(indexFileName) != 0 || indexOffset != 0)) {
                 handleNoConsumableMessage(context);
@@ -50,9 +54,13 @@ public class ZeroConsumerHandler implements Handler {
             }
 
             // 根据日志文件偏移量和请求批次读取消息
+            // 根据日志偏移量，确定目标日志文件名
             String logFileName = FileUtil.determineTargetLogFile(GlobalConfiguration.get().getLogPath() + File.separator + topic, messageLogOffset);
+            // 获取文件名代表的偏移量
             long offsetOfFileName = FileUtil.getOffsetOfFileName(logFileName);
+            // 文件内便宜量 = 日志偏移量 - 文件名代表的偏移量
             long messageOffsetInLogFile = messageLogOffset - offsetOfFileName;
+            // 按批次读取消息 也是以内存映射的方式
             List<Message> messages = IOUtil.readLog(logFileName, messageOffsetInLogFile, request.getBatch());
 
             // 把message的序列化类型重写为客户端要求的类型，结果写入context

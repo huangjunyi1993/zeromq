@@ -18,16 +18,22 @@ import java.util.stream.Collectors;
  */
 public class ZeroHandlerFactory implements HandlerFactory {
 
+    // 处理器注册表
     private static final List<Class<? extends Handler>> HANDLER_CLASS_LIST = new ArrayList<>();
 
+    // 所有处理器
     private static final List<Handler> HANDLER_LIST = new ArrayList<>();
 
+    // 拦截器注册表
     private static final List<Class<? extends Interceptor>> INTERCEPTOR_CLASS_LIST = new ArrayList<>();
 
+    // 所有拦截器
     private static final List<Interceptor> INTERCEPTOR_LIST = new ArrayList<>();
 
+    // 处理器缓存表： 消息类型 => 处理器
     private static final Map<Integer, HandlerChain> HANDLER_CHAIN_MAP = new HashMap<>();
 
+    // 工厂单例
     private volatile static ZeroHandlerFactory factory;
 
     private ZeroHandlerFactory() {
@@ -36,20 +42,27 @@ public class ZeroHandlerFactory implements HandlerFactory {
 
     @Override
     public Handler build(ZeroProtocol protocol) {
+        // 根据消息类型获取处理器
         if (HANDLER_CHAIN_MAP.containsKey(protocol.getMessageType())) {
             return HANDLER_CHAIN_MAP.get(protocol.getMessageType());
         }
+
+        // 处理器不存在 创建 根据消息类型过滤出对应的处理器
         Optional<Handler> handlerOptional = HANDLER_LIST.stream().filter(handler -> handler.messageType() == protocol.getMessageType()).findFirst();
+        // 构建处理器链
         ZeroHandlerChain handlerChain = handlerOptional.map(handler -> {
             ZeroHandlerChain zeroHandlerChain = new ZeroHandlerChain();
             zeroHandlerChain.setHandler(handler);
+            // 根据消息类型，过滤出匹配的拦截器
             List<Interceptor> interceptors = INTERCEPTOR_LIST.stream().filter(interceptor -> interceptor.support(handler)).collect(Collectors.toList());
             if (interceptors.size() > 0) {
+                // 添加到处理器链中
                 zeroHandlerChain.setInterceptors(interceptors);
             }
             return zeroHandlerChain;
         }).orElse(null);
 
+        // 缓存处理器到处理器缓存表
         HANDLER_CHAIN_MAP.put(protocol.getMessageType(), handlerChain);
         return handlerChain;
     }
@@ -78,6 +91,10 @@ public class ZeroHandlerFactory implements HandlerFactory {
         HANDLER_LIST.add(handler);
     }
 
+    /**
+     * 获取处理器工厂单例实体
+     * @return
+     */
     public static HandlerFactory getInstance() {
         if (factory == null) {
             synchronized (ZeroHandlerFactory.class) {

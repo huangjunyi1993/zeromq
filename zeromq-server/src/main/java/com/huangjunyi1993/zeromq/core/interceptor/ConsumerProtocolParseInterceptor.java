@@ -27,8 +27,11 @@ public class ConsumerProtocolParseInterceptor extends AbstractProtocolParseInter
     @Override
     public void pre(Context context) {
         super.pre(context);
+        // 反序列化获取请求对象，设置到变量表
         Request request = deserialize(context);
         context.setVariable(CONTEXT_VARIABLE_REQUEST, request);
+
+        // topic检查，设置到变量表
         if (request.getTopic() == null || "".equals(request.getTopic())) {
             LOGGER.info("The request topic is null");
             context.setVariable(CONTEXT_VARIABLE_ERROR_CODE, REQUEST_TOPIC_IS_NULL.getCode());
@@ -36,6 +39,8 @@ public class ConsumerProtocolParseInterceptor extends AbstractProtocolParseInter
             context.setVariable(CONTEXT_VARIABLE_HANDLE_SUCCESS, false);
             throw new ServerHandleException("The request topic is null");
         }
+
+        // 请求批次检查，设置到变量表
         if (request.getBatch() <= 0) {
             LOGGER.info("Batch illegal");
             context.setVariable(CONTEXT_VARIABLE_ERROR_CODE, BATCH_ILLEGAL.getCode());

@@ -8,12 +8,16 @@ import com.huangjunyi1993.zeromq.base.Context;
  */
 public interface Interceptor {
 
+    // 该拦截器是否适配该处理器类型
     boolean support(Handler handler);
 
+    // 前置拦截
     void pre(Context context);
 
+    // 后置拦截
     void after(Context context);
 
+    // 拦截器排序
     int order();
 
 }

@@ -67,6 +67,7 @@ public class ZeroBootstrap {
     }
 
     private static void registerListener() {
+        // SPI机制，注册监听器
         ServiceLoader<Listener> listenerServiceLoader = ServiceLoader.load(Listener.class);
         ZeroBroadcaster broadcaster = ZeroBroadcaster.getBroadcaster();
         for (Listener listener : listenerServiceLoader) {
@@ -75,6 +76,7 @@ public class ZeroBootstrap {
     }
 
     private static void initTask() {
+        // SPI机制，注册定时任务
         ServiceLoader<AbstractTask> taskServiceLoader = ServiceLoader.load(AbstractTask.class);
         for (AbstractTask task : taskServiceLoader) {
             task.start();
@@ -85,35 +87,52 @@ public class ZeroBootstrap {
         Properties properties = null;
         if (args.length > 0 && !"".equals(args[0])) {
             properties = new Properties();
+            // 加载配置文件
             properties.load(Files.newInputStream(Paths.get(args[0])));
         }
+        // 初始化全局配置
         GlobalConfiguration config = GlobalConfiguration.init(properties);
         return config;
     }
 
     private static void registerHandlerAndInterceptor() throws InstantiationException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+        // 获取处理器工厂单例
         HandlerFactory factory = ZeroHandlerFactory.getInstance();
+        // SPI机制，注册处理器
         ServiceLoader<Handler> handlerServiceLoader = ServiceLoader.load(Handler.class);
         for (Handler handler : handlerServiceLoader) {
             factory.regiserHandler(handler);
         }
+        // SPI机制，注册拦截器链
         ServiceLoader<Interceptor> interceptorServiceLoader = ServiceLoader.load(Interceptor.class);
         for (Interceptor interceptor : interceptorServiceLoader) {
             factory.regiserInterceptor(interceptor);
         }
     }
 
+    /**
+     * 注册服务器节点到zk
+     * @param config
+     * @throws Exception
+     */
     private static void register(GlobalConfiguration config) throws Exception {
+        // 创建并启动zk客户端
         CuratorFramework zkCli = CuratorFrameworkFactory.newClient(config.getZkUrl(), new ExponentialBackoffRetry(5000, 30));
         zkCli.start();
+        // 加分布式锁，防止多个服务端并发注册
         InterProcessLock lock = new InterProcessMutex(zkCli, "/lock/broker");
         try {
+
+            // 自旋加锁
             while (!lock.acquire(10 * 1000, TimeUnit.SECONDS)) {}
 
+            // 创建服务器注册路径是否存在，不存在则创建
             Stat stat = zkCli.checkExists().forPath("/brokers");
             if (stat == null) {
                 zkCli.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath("/brokers", "".getBytes());
             }
+
+            // 获取zk上服务器注册节点的信息 ip:port,ip:port
             byte[] bytes = zkCli.getData().forPath("/brokers");
             Set<String> urlSet = new HashSet<>();
             String brokers = new String(bytes);
@@ -124,6 +143,8 @@ public class ZeroBootstrap {
                     urlSet.add(brokers);
                 }
             }
+
+            // 添加自己的ip端口，写入到zk上的服务器注册节点
             urlSet.add(getHostIpAndPort(config));
             brokers = urlSet.stream().collect(Collectors.joining(","));
             zkCli.setData().forPath("/brokers", brokers.getBytes());
