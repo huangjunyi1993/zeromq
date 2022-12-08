@@ -48,6 +48,7 @@ public class ConsumerOffsetUpdateInterceptor implements Interceptor {
     public void pre(Context context) {
         Ack ack = (Ack) context.getVariable(CONTEXT_VARIABLE_ACK);
         try {
+            // ack中包含topic和groupId，确定偏移量更新到哪个文件
             String file = GlobalConfiguration.get().getConsumerOffsetPath() + File.separator + ack.topic() + "_" + ack.consumerGroupId() + ".txt";
             MappedByteBuffer map;
             if (!mappedByteBufferMap.containsKey(file)) {

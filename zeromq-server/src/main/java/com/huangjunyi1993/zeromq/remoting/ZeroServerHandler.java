@@ -59,6 +59,7 @@ public class ZeroServerHandler extends SimpleChannelInboundHandler<ZeroProtocol>
                 handleSuccess = false;
             }
 
+            // 根据请求协议报文中的消息类型，确定响应内容
             Response<Message> response = null;
             if (protocol.getMessageType() == MESSAGE.getType()) {
                 response = handleSuccess ? ZeroResponse.success(protocol.getId(), false) : ZeroResponse.failed(protocol.getId(), -1, (int) context.getVariable(CONTEXT_VARIABLE_ERROR_CODE), (String) context.getVariable(CONTEXT_VARIABLE_ERROR_MESSAGE), false);
@@ -70,8 +71,10 @@ public class ZeroServerHandler extends SimpleChannelInboundHandler<ZeroProtocol>
 
             try {
                 if (response != null) {
+                    // 序列化响应对象
                     Serializer serializer = SerializerFactory.getSerializer(protocol.getSerializationType());
                     byte[] bytes = serializer.serialize(response);
+                    // 生成响应协议对象并写入通道
                     ctx.channel().writeAndFlush(new ZeroProtocol(bytes.length, protocol.getSerializationType(), RESPONSE.getType(), protocol.getId(), bytes));
                 }
             } catch (IOException e) {

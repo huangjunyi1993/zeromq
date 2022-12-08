@@ -27,6 +27,7 @@ public class AckProtocolParseInterceptor extends AbstractProtocolParseIntercepto
     @Override
     public void pre(Context context) {
         super.pre(context);
+        // 反序列化ack对象，并保存到变量表
         Ack ack = deserialize(context);
         context.setVariable(CONTEXT_VARIABLE_ACK, ack);
         if (ack.topic() == null || "".equals(ack.topic())) {
