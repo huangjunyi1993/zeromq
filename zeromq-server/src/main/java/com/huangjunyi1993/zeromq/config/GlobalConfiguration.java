@@ -1,5 +1,6 @@
 package com.huangjunyi1993.zeromq.config;
 
+import com.huangjunyi1993.zeromq.core.writer.MessageWriterProxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +38,12 @@ public class GlobalConfiguration {
     // 单个日志长度，默认1M大小
     private long maxLogFileSize = 1024 * 1024L;
 
+    // 写入策略
+    private static String writeStrategy;
+
+    // 刷盘策略
+    private static String flushStrategy;
+
     private long consumerOffsetSyncInterval = -1L;
 
     // 单例
@@ -48,6 +55,11 @@ public class GlobalConfiguration {
         this.logPath = logPath;
         this.indexPath = indexPath;
         this.consumerOffsetPath = consumerOffsetPath;
+    }
+
+    static {
+        writeStrategy = DEFAULT_WRITE_STRATEGY;
+        flushStrategy = FLUSH_STRATEGY_SYNC;
     }
 
     public int getPort() {
@@ -97,6 +109,8 @@ public class GlobalConfiguration {
                         String logPath = properties.getProperty(LOG_PATH);
                         String consumerOffsetPath = properties.getProperty(CONSUMER_OFFSET_PATH);
                         String indexPath = properties.getProperty(INDEX_PATH);
+                        String writeStrategy = properties.getProperty(WRITE_STRATEGY);
+                        String flushStrategy = properties.getProperty(FLUSH_STRATEGY);
                         // 端口
                         if (properties.getProperty(PORT) != null) {
                             port = Integer.valueOf(properties.getProperty(PORT));
@@ -119,6 +133,14 @@ public class GlobalConfiguration {
                         }
                         // 创建全局配置对象
                         globalConfiguration = new GlobalConfiguration(port, zkurl, logPath, indexPath, consumerOffsetPath);
+
+                        if (writeStrategy != null && !"".equals(writeStrategy)) {
+                            GlobalConfiguration.writeStrategy = writeStrategy;
+                        }
+                        if (flushStrategy != null && !"".equals(flushStrategy)) {
+                            GlobalConfiguration.flushStrategy = flushStrategy;
+                        }
+
                         // 最大日志长度
                         if (properties.getProperty(MAX_LOG_FILE_SIZE) != null) {
                             try {
@@ -141,6 +163,10 @@ public class GlobalConfiguration {
             }
         }
         return globalConfiguration;
+    }
+
+    public static MessageWriterProxy getMessageWriterProxy() throws NoSuchMethodException {
+        return MessageWriterProxy.getInstance(writeStrategy, flushStrategy);
     }
 
     private static String getDefaultIndexPath() {

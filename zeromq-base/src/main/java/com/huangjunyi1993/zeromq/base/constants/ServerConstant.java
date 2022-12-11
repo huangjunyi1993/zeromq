@@ -14,4 +14,10 @@ public interface ServerConstant {
 
     String PATH_OFFSET = "offset";
 
+    String FLUSH_STRATEGY_ASYNC = "async";
+
+    String FLUSH_STRATEGY_SYNC = "sync";
+
+    String DEFAULT_WRITE_STRATEGY = "sync";
+
 }

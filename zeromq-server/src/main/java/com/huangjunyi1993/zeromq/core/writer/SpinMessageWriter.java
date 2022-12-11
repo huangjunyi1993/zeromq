@@ -1,7 +1,8 @@
-package com.huangjunyi1993.zeromq.util;
+package com.huangjunyi1993.zeromq.core.writer;
 
-import com.huangjunyi1993.zeromq.base.Context;
 import com.huangjunyi1993.zeromq.config.GlobalConfiguration;
+import com.huangjunyi1993.zeromq.util.FileUtil;
+import com.huangjunyi1993.zeromq.util.IOUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,20 +17,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 消息日志工具类V2
+ * 消息日志写入器v2
  * 处理并发读写通过 CAS + 内存映射
  * Created by huangjunyi on 2022/8/27.
  */
-public class MessageLogUtil {
+@WriteStrategy("spin")
+public class SpinMessageWriter extends AbstractMessageWriter {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(MessageLogUtil.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(SpinMessageWriter.class);
 
     private Object writeLogLock = new Object();
 
     private Object writeIndexLock = new Object();
-
-    // 日志工具类实例表 topic => 工具类实例
-    private static final Map<String, MessageLogUtil> TOPIC_MESSAGE_LOG_UTIL_MAP = new ConcurrentHashMap<>();
 
     private AtomicReference<PositionCounter> positionCounterAtomicReference;
 
@@ -38,28 +37,16 @@ public class MessageLogUtil {
         private int indexPosition;
     }
 
-    private MessageLogUtil() {}
-
-    /**
-     * 获取对应topic的日志工具实例
-     * @param topic
-     * @return
-     */
-    public static MessageLogUtil getMessageLogUtil(String topic) {
-        TOPIC_MESSAGE_LOG_UTIL_MAP.computeIfAbsent(topic, key -> new MessageLogUtil());
-        return TOPIC_MESSAGE_LOG_UTIL_MAP.get(topic);
-    }
-
     /**
      * 持久化消息到日志文件，并构建消息索引
      * @param topic
      * @param bytes
      * @param serializationType
-     * @param context
      * @throws IOException
      * @throws InterruptedException
      */
-    public void writeMessageLog(String topic, byte[] bytes, int serializationType, Context context) throws IOException, InterruptedException {
+    @Override
+    public void writeMessageLog(String topic, byte[] bytes, int serializationType, String flushStrategy) throws IOException, InterruptedException {
 
         // 该topic的消息日志存储路径 ${logPath}/${topic}
         String dir = GlobalConfiguration.get().getLogPath() + File.separator + topic;
@@ -99,20 +86,8 @@ public class MessageLogUtil {
                             // 找到最新的日志文件
                             FileChannel channel = FileChannel.open(Paths.get(lastFile), StandardOpenOption.WRITE, StandardOpenOption.READ);
                             MappedByteBuffer map = channel.map(FileChannel.MapMode.READ_WRITE, 0, channel.size());
-                            int position = map.position();
-                            int temp;
-                            // 定位到日志最新的未写入位置
-                            while (position < channel.size()) {
-                                temp = map.getInt();
-                                if (temp == 0) {
-                                    // 设置日志写入位置
-                                    positionCounter.logPosition = position;
-                                    break;
-                                }
-                                map.getInt();
-                                map.get(new byte[temp]);
-                                position = map.position();
-                            }
+                            // 定位日志最新写入位置，并设置
+                            positionCounter.logPosition = locateLogWritePosition(channel.size(), map);
                         }
 
                         // 找到最新的索引文件 依然是根据偏移量判断 文件名是前面所有文件写入的索引大小偏移量
@@ -126,15 +101,8 @@ public class MessageLogUtil {
                             // 找到最新的索引文件
                             FileChannel channel = FileChannel.open(Paths.get(lastIndexFile), StandardOpenOption.WRITE, StandardOpenOption.READ);
                             MappedByteBuffer map = channel.map(FileChannel.MapMode.READ_WRITE, 0, channel.size());
-                            // 设置索引写入位置
-                            int position = map.position();
-                            while (position < channel.size()) {
-                                if (map.getLong() == 0 && (FileUtil.getOffsetOfFileName(lastIndexFile) != 0 || position != 0)) {
-                                    positionCounter.indexPosition = position;
-                                    break;
-                                }
-                                position = map.position();
-                            }
+                            // 定位索引最新写入位置，并设置
+                            positionCounter.indexPosition = locateIndexWritePosition(channel.size(), map, lastIndexFile);
                         }
 
                         // 创建日志写入位置计数器的原子引用
@@ -207,7 +175,7 @@ public class MessageLogUtil {
             indexBuf = indexChannel.map(FileChannel.MapMode.READ_WRITE, indexPosition, 8L);
             if (logBuf != null && indexBuf != null) {
                 // 写入日志和索引
-                IOUtil.writeLogAndIndex(bytes, serializationType, lastFile, lastIndexFile, logBuf, indexBuf, logPosition);
+                IOUtil.writeLogAndIndex(bytes, serializationType, lastFile, lastIndexFile, logBuf, indexBuf, logPosition, flushStrategy);
             }
 
         } finally {

@@ -3,17 +3,19 @@ package com.huangjunyi1993.zeromq.util;
 import com.huangjunyi1993.zeromq.base.entity.Message;
 import com.huangjunyi1993.zeromq.base.serializer.Serializer;
 import com.huangjunyi1993.zeromq.base.serializer.SerializerFactory;
+import com.huangjunyi1993.zeromq.core.writer.command.IndexCommand;
+import com.huangjunyi1993.zeromq.core.writer.command.WriteCommand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
+
+import static com.huangjunyi1993.zeromq.base.constants.ServerConstant.FLUSH_STRATEGY_SYNC;
 
 /**
  * IO工具类
@@ -33,7 +35,10 @@ public class IOUtil {
      * @param indexBuf
      * @param logPosition
      */
-    public static void writeLogAndIndex(byte[] bytes, int serializationType, String lastFile, String lastIndexFile, MappedByteBuffer logBuf, MappedByteBuffer indexBuf, int logPosition) {
+    public static void writeLogAndIndex(byte[] bytes, int serializationType,
+                                        String lastFile, String lastIndexFile,
+                                        MappedByteBuffer logBuf, MappedByteBuffer indexBuf,
+                                        int logPosition, String flushStrategy) {
         LOGGER.info("==================> {} write the message log {} <==================", Thread.currentThread().getName(), lastFile);
         // 写入消息日志长度
         logBuf.putInt(bytes.length);
@@ -41,12 +46,16 @@ public class IOUtil {
         logBuf.putInt(serializationType);
         // 写入消息日志数据
         logBuf.put(bytes);
-        logBuf.force();
+        if (FLUSH_STRATEGY_SYNC.equals(flushStrategy)) {
+            logBuf.force();
+        }
 
         LOGGER.info("==================> {} write the message index {} <==================", Thread.currentThread().getName(), lastIndexFile);
         // 写入索引记录 日志总偏移量=日志文件名记录的偏移量+日志写入位置
         indexBuf.putLong(FileUtil.getOffsetOfFileName(lastFile) + logPosition);
-        indexBuf.force();
+        if (FLUSH_STRATEGY_SYNC.equals(flushStrategy)) {
+            indexBuf.force();
+        }
     }
 
     /**

@@ -2,13 +2,15 @@ package com.huangjunyi1993.zeromq.core.handler;
 
 import com.huangjunyi1993.zeromq.base.Context;
 import com.huangjunyi1993.zeromq.base.exception.ServerHandleException;
+import com.huangjunyi1993.zeromq.config.GlobalConfiguration;
 import com.huangjunyi1993.zeromq.core.Handler;
-import com.huangjunyi1993.zeromq.util.MessageLogUtil;
-import com.huangjunyi1993.zeromq.util.WriteCommand;
+import com.huangjunyi1993.zeromq.core.writer.SpinMessageWriter;
+import com.huangjunyi1993.zeromq.core.writer.SynchronizedMessageWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 
 import static com.huangjunyi1993.zeromq.base.enums.ErrorCodeEnum.*;
 import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.MESSAGE;
@@ -31,9 +33,9 @@ public class ZeroProducerHandler implements Handler {
         // 序列化类型
         int serializationType = (int) context.getVariable(CONTEXT_VARIABLE_SERIALIZATION_TYPE);
         try {
-            // 一个topic对应一个日志工具类实例 消息持久化到日志文件 并且建立索引
-            MessageLogUtil.getMessageLogUtil(topic).writeMessageLog(topic, bytes, serializationType, context);
-        } catch (IOException|InterruptedException e) {
+            // 获取消息写入器代理，写入消息日志
+            GlobalConfiguration.getMessageWriterProxy().writeMessageLog(topic, bytes, serializationType);
+        } catch (Exception e) {
             LOGGER.info("An exception occurred while writing a message to the log file: ", e);
             context.setVariable(CONTEXT_VARIABLE_ERROR_CODE, IO_EXCEPTION.getCode());
             context.setVariable(CONTEXT_VARIABLE_ERROR_MESSAGE, "An exception occurred while writing a message to the log file");

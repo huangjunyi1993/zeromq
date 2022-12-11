@@ -20,4 +20,8 @@ public interface GlobalConfigurablePropertyConstant {
 
     String MAX_LOG_FILE_SIZE = "maxLogFileSize";
 
+    String FLUSH_STRATEGY = "flushStrategy";
+
+    String WRITE_STRATEGY = "writeStrategy";
+
 }

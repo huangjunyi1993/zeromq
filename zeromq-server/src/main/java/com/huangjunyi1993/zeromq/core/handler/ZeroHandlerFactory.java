@@ -36,6 +36,8 @@ public class ZeroHandlerFactory implements HandlerFactory {
     // 工厂单例
     private volatile static ZeroHandlerFactory factory;
 
+    private static final Object LOCK_OBJECT = new Object();
+
     private ZeroHandlerFactory() {
 
     }
@@ -97,7 +99,7 @@ public class ZeroHandlerFactory implements HandlerFactory {
      */
     public static HandlerFactory getInstance() {
         if (factory == null) {
-            synchronized (ZeroHandlerFactory.class) {
+            synchronized (LOCK_OBJECT) {
                 if (factory == null) {
                     factory = new ZeroHandlerFactory();
                 }

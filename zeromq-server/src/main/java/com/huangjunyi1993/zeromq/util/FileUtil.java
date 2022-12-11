@@ -198,10 +198,9 @@ public class FileUtil {
                     .map(Long::parseLong)
                     .collect(Collectors.toList());
 
-            // 从大到小排序
+
             fileNames.sort((o1, o2) -> (int)(o2 - o1));
             for (Long fileName : fileNames) {
-                // 从大到小遍历，文件名第一个小于给定日志偏移量的，就是目标文件
                 if (fileName <= messageLogOffset) {
                     return dir + File.separator + fileName + ".log";
                 }
