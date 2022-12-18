@@ -16,6 +16,9 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static com.huangjunyi1993.zeromq.base.constants.ServerConstant.INDEX_ITEM_LENGTH;
+import static com.huangjunyi1993.zeromq.base.constants.ServerConstant.LOG_HEAD_LENGTH;
+
 /**
  * 消息日志写入器V1
  * 处理并发读写通过 synchronized + 内存映射
@@ -47,9 +50,11 @@ public class SynchronizedMessageWriter extends AbstractMessageWriter {
         // 该topic的消息日志存储路径 ${logPath}/${topic}
         String dir = GlobalConfiguration.get().getLogPath() + File.separator + topic;
         // 本次写入的长度 本次写入的长度 加8字节长度是用于在前面存长度和序列化类型
-        int writeLen = bytes.length + 8;
+        long writeLen = bytes.length + LOG_HEAD_LENGTH;
         // 该topic对应的消息日志索引文件存储路径
         String currentTopicIndexFilePath = GlobalConfiguration.get().getIndexPath() + File.separator + topic;
+        // 索引文件容量（条数）
+        long indexFileCapacity = GlobalConfiguration.get().getIndexFileCapacity();
 
         String lastFile;
         String lastIndexFile;
@@ -107,19 +112,19 @@ public class SynchronizedMessageWriter extends AbstractMessageWriter {
                 }
 
                 // 如果索引文件写满了，新建一个
-                if (currentIndexWritePosition + 8L > 1000 * 8L) {
+                if (currentIndexWritePosition + INDEX_ITEM_LENGTH > indexFileCapacity * INDEX_ITEM_LENGTH) {
                     currentIndexWritePosition = 0;
                     indexPosition = currentIndexWritePosition;
                     lastIndexFile = FileUtil.createNewIndexFile(lastIndexFile);
                 }
-                indexPosition += 8L;
+                indexPosition += INDEX_ITEM_LENGTH;
             }
 
             // 内存映射
             logChannel = FileChannel.open(Paths.get(lastFile), StandardOpenOption.WRITE, StandardOpenOption.READ);
             indexChannel = FileChannel.open(Paths.get(lastIndexFile), StandardOpenOption.WRITE, StandardOpenOption.READ);
             logBuf = logChannel.map(FileChannel.MapMode.READ_WRITE, currentLogWritePosition, writeLen);
-            indexBuf = indexChannel.map(FileChannel.MapMode.READ_WRITE, currentIndexWritePosition, 8L);
+            indexBuf = indexChannel.map(FileChannel.MapMode.READ_WRITE, currentIndexWritePosition, INDEX_ITEM_LENGTH);
             // 写入日志和索引到
             IOUtil.writeLogAndIndex(bytes, serializationType, lastFile, lastIndexFile, logBuf, indexBuf, (int) (FileUtil.getOffsetOfFileName(lastFile) + currentLogWritePosition), flushStrategy);
         } finally {

@@ -9,6 +9,7 @@ import com.huangjunyi1993.zeromq.base.exception.ServerHandleException;
 import com.huangjunyi1993.zeromq.base.protocol.ZeroProtocol;
 import com.huangjunyi1993.zeromq.base.serializer.Serializer;
 import com.huangjunyi1993.zeromq.base.serializer.SerializerFactory;
+import com.huangjunyi1993.zeromq.config.GlobalConfiguration;
 import com.huangjunyi1993.zeromq.core.Handler;
 import com.huangjunyi1993.zeromq.core.HandlerFactory;
 import com.huangjunyi1993.zeromq.core.handler.ZeroHandlerFactory;
@@ -20,8 +21,11 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 
 import static com.huangjunyi1993.zeromq.base.constants.ContextVariableConstant.*;
+import static com.huangjunyi1993.zeromq.base.enums.ErrorCodeEnum.ID_NOT_CONSISTENT;
+import static com.huangjunyi1993.zeromq.base.enums.ErrorCodeEnum.SERVER_INTERNAL_ERROR;
 import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.*;
 
 /**
@@ -34,8 +38,12 @@ public class ZeroServerHandler extends SimpleChannelInboundHandler<ZeroProtocol>
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, ZeroProtocol protocol) throws Exception {
-        // 异步处理请求
-        ctx.channel().eventLoop().submit(() -> {
+        // 异步处理请求，处理生产者的请求使用写请求线程池，处理消费者请求使用读请求线程池
+        ExecutorService executorService = MESSAGE.getType() == protocol.getMessageType() ?
+                GlobalConfiguration.get().getWriteExecutorService() :
+                GlobalConfiguration.get().getReadExecutorService();
+
+        executorService.execute(() -> {
             boolean handleSuccess = true;
             Context context = null;
             try {
@@ -55,7 +63,10 @@ public class ZeroServerHandler extends SimpleChannelInboundHandler<ZeroProtocol>
                 LOGGER.info("The server Handler failed to process the request:", e);
                 handleSuccess = false;
             } catch (Exception e) {
-                LOGGER.info("System internal error:", e);
+                LOGGER.info("server internal error:", e);
+                context.setVariable(CONTEXT_VARIABLE_ERROR_CODE, SERVER_INTERNAL_ERROR.getCode());
+                context.setVariable(CONTEXT_VARIABLE_ERROR_MESSAGE, "server internal error");
+                context.setVariable(CONTEXT_VARIABLE_HANDLE_SUCCESS, false);
                 handleSuccess = false;
             }
 

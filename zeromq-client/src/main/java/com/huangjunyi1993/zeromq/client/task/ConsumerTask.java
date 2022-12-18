@@ -14,6 +14,7 @@ import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -26,6 +27,9 @@ import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.REQUEST;
 public class ConsumerTask implements Runnable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsumerTask.class);
+
+    // 线程池
+    private ExecutorService executorService;
 
     // 任务停止标志
     private volatile boolean shutdown;
@@ -42,11 +46,12 @@ public class ConsumerTask implements Runnable {
     // 全局配置
     private ConsumerConfig config;
 
-    public ConsumerTask(Channel channel, BrokerServerUrl brokerServerUrl, String topic, ConsumerConfig config) {
+    public ConsumerTask(Channel channel, BrokerServerUrl brokerServerUrl, String topic, ConsumerConfig config, ExecutorService executorService) {
         this.channel = channel;
         this.brokerServerUrl = brokerServerUrl;
         this.topic = topic;
         this.config = config;
+        this.executorService = executorService;
     }
 
     /**
@@ -97,6 +102,6 @@ public class ConsumerTask implements Runnable {
     }
 
     public void start() {
-        new Thread(this).start();
+        executorService.execute(this);
     }
 }

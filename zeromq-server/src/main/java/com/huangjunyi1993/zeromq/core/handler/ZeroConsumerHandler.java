@@ -17,6 +17,7 @@ import java.util.List;
 
 import static com.huangjunyi1993.zeromq.base.constants.ContextVariableConstant.*;
 import static com.huangjunyi1993.zeromq.base.constants.MessageHeadConstant.MESSAGE_HEAD_SERIALIZATION_TYPE;
+import static com.huangjunyi1993.zeromq.base.constants.ServerConstant.INDEX_ITEM_LENGTH;
 import static com.huangjunyi1993.zeromq.base.enums.ErrorCodeEnum.IO_EXCEPTION;
 import static com.huangjunyi1993.zeromq.base.enums.ErrorCodeEnum.NO_CONSUMABLE_NEWS;
 import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.REQUEST;
@@ -36,13 +37,13 @@ public class ZeroConsumerHandler implements Handler {
             Request request = (Request) context.getVariable(CONTEXT_VARIABLE_REQUEST);
             String topic = request.getTopic();
             long consumerOffset = (long) context.getVariable(CONTEXT_VARIABLE_CONSUMER_OFFSET);
-            // 索引文件是一千条索引一个文件，索引除以1000，就是最新的文件名
-            long index = consumerOffset / 1000L;
+            // 定位最新索引文件的文件名，消费偏移量除以单个索引文件的最大条数（默认10000），就是最新的文件名
+            long index = consumerOffset / GlobalConfiguration.get().getIndexFileCapacity();
             // 索引文件内偏移量：在该索引文件中，是第几条索引
-            long indexOffset = consumerOffset % 1000L;
+            long indexOffset = consumerOffset % GlobalConfiguration.get().getIndexFileCapacity();
             // 根据消费者偏移量定位索引文件名
             String indexFileName = GlobalConfiguration.get().getIndexPath() + File.separator + topic + File.separator + index + ".index";
-            if (!FileUtil.exists(indexFileName) || FileUtil.getFileSize(indexFileName) <= indexOffset * 8L) {
+            if (!FileUtil.exists(indexFileName) || FileUtil.getFileSize(indexFileName) <= indexOffset * INDEX_ITEM_LENGTH) {
                 handleNoConsumableMessage(context);
                 return;
             }
@@ -58,7 +59,7 @@ public class ZeroConsumerHandler implements Handler {
             String logFileName = FileUtil.determineTargetLogFile(GlobalConfiguration.get().getLogPath() + File.separator + topic, messageLogOffset);
             // 获取文件名代表的偏移量
             long offsetOfFileName = FileUtil.getOffsetOfFileName(logFileName);
-            // 文件内便宜量 = 日志偏移量 - 文件名代表的偏移量
+            // 文件内偏移量 = 日志偏移量 - 文件名代表的偏移量
             long messageOffsetInLogFile = messageLogOffset - offsetOfFileName;
             // 按批次读取消息 也是以内存映射的方式
             List<Message> messages = IOUtil.readLog(logFileName, messageOffsetInLogFile, request.getBatch());

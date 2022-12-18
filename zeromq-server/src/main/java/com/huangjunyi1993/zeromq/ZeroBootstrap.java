@@ -9,9 +9,6 @@ import com.huangjunyi1993.zeromq.core.Interceptor;
 import com.huangjunyi1993.zeromq.core.handler.ZeroHandlerFactory;
 import com.huangjunyi1993.zeromq.remoting.NettyServer;
 import com.huangjunyi1993.zeromq.task.AbstractTask;
-import com.huangjunyi1993.zeromq.task.ConsumerOffsetSyncTask;
-import com.huangjunyi1993.zeromq.util.ConsumerOffsetCache;
-import com.huangjunyi1993.zeromq.util.FileUtil;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.locks.InterProcessLock;
@@ -22,7 +19,6 @@ import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.Inet4Address;

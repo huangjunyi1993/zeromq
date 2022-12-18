@@ -12,9 +12,10 @@ import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.*;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+
+import static com.huangjunyi1993.zeromq.base.constants.ServerConstant.INDEX_ITEM_LENGTH;
+import static com.huangjunyi1993.zeromq.base.constants.ServerConstant.LOG_HEAD_LENGTH;
 
 /**
  * 消息日志写入器v2
@@ -33,8 +34,8 @@ public class SpinMessageWriter extends AbstractMessageWriter {
     private AtomicReference<PositionCounter> positionCounterAtomicReference;
 
     private static class PositionCounter {
-        private int logPosition;
-        private int indexPosition;
+        private long logPosition;
+        private long indexPosition;
     }
 
     /**
@@ -51,9 +52,11 @@ public class SpinMessageWriter extends AbstractMessageWriter {
         // 该topic的消息日志存储路径 ${logPath}/${topic}
         String dir = GlobalConfiguration.get().getLogPath() + File.separator + topic;
         // 本次写入的长度 加8字节长度是用于在前面存长度和序列化类型
-        int writeLen = bytes.length + 8;
+        long writeLen = bytes.length + LOG_HEAD_LENGTH;
         // 该topic对应的消息日志索引文件存储路径
         String currentTopicIndexFilePath = GlobalConfiguration.get().getIndexPath() + File.separator + topic;
+        // 索引文件容量（条数）
+        long indexFileCapacity = GlobalConfiguration.get().getIndexFileCapacity();
 
         // 最新的日志文件
         String lastFile;
@@ -112,9 +115,9 @@ public class SpinMessageWriter extends AbstractMessageWriter {
             }
 
             // 日志写入位置
-            int logPosition;
+            long logPosition;
             // 索引写入位置
-            int indexPosition;
+            long indexPosition;
             // 计数器比较值
             PositionCounter expect;
             // 计数器更新值
@@ -136,9 +139,9 @@ public class SpinMessageWriter extends AbstractMessageWriter {
                 }
 
                 // 双重检测锁，索引文件写满了，再开一个，同时新开一个计数器
-                if (positionCounterAtomicReference.get().indexPosition + 8L > 1000 * 8L) {
+                if (positionCounterAtomicReference.get().indexPosition + INDEX_ITEM_LENGTH > indexFileCapacity * INDEX_ITEM_LENGTH) {
                     synchronized (writeIndexLock) {
-                        if (positionCounterAtomicReference.get().indexPosition + 8L > 1000 * 8L) {
+                        if (positionCounterAtomicReference.get().indexPosition + INDEX_ITEM_LENGTH > indexFileCapacity * INDEX_ITEM_LENGTH) {
                             FileUtil.createNewIndexFile(FileUtil.findLastIndexFile(currentTopicIndexFilePath));
                             update = new PositionCounter();
                             // 新的计数器的日志写入位置不变
@@ -164,7 +167,7 @@ public class SpinMessageWriter extends AbstractMessageWriter {
                 // 写入后的日志位置
                 update.logPosition = logPosition + writeLen;
                 // 写入后的索引位置
-                update.indexPosition = indexPosition + 8;
+                update.indexPosition = indexPosition + INDEX_ITEM_LENGTH;
                 // cas 更新
             } while (!positionCounterAtomicReference.compareAndSet(expect, update));
 
@@ -172,7 +175,7 @@ public class SpinMessageWriter extends AbstractMessageWriter {
             logChannel = FileChannel.open(Paths.get(lastFile), StandardOpenOption.WRITE, StandardOpenOption.READ);
             indexChannel = FileChannel.open(Paths.get(lastIndexFile), StandardOpenOption.WRITE, StandardOpenOption.READ);
             logBuf = logChannel.map(FileChannel.MapMode.READ_WRITE, logPosition, writeLen);
-            indexBuf = indexChannel.map(FileChannel.MapMode.READ_WRITE, indexPosition, 8L);
+            indexBuf = indexChannel.map(FileChannel.MapMode.READ_WRITE, indexPosition, INDEX_ITEM_LENGTH);
             if (logBuf != null && indexBuf != null) {
                 // 写入日志和索引
                 IOUtil.writeLogAndIndex(bytes, serializationType, lastFile, lastIndexFile, logBuf, indexBuf, logPosition, flushStrategy);

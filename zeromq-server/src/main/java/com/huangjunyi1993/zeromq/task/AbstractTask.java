@@ -3,7 +3,7 @@ package com.huangjunyi1993.zeromq.task;
 import java.util.concurrent.locks.LockSupport;
 
 /**
- * 定时任务抽象类
+ * 定时任务抽象类（暂时没有用到）
  * Created by huangjunyi on 2022/8/21.
  */
 public abstract class AbstractTask implements Runnable {

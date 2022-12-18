@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.huangjunyi1993.zeromq.base.entity.Message;
 import com.huangjunyi1993.zeromq.base.exception.ConsumerException;
+import com.huangjunyi1993.zeromq.base.util.ThreadPoolGenerator;
 import com.huangjunyi1993.zeromq.client.config.AbstractConfig;
 import com.huangjunyi1993.zeromq.client.config.BrokerServerUrl;
 import com.huangjunyi1993.zeromq.client.config.ConsumerConfig;
@@ -29,6 +30,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 
+import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.THREAD_NAME;
 import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.TOPIC_DEFAULT;
 import static com.huangjunyi1993.zeromq.base.constants.MessageHeadConstant.MESSAGE_HEAD_TOPIC;
 
@@ -65,6 +67,8 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
     // netty客户端
     private NettyClient nettyClient;
 
+    private ExecutorService executorService;
+
     public AbstractConsumerBootStrap(AbstractConfig config) {
         // 保存全局配置
         this.config = config;
@@ -76,6 +80,8 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
         // 创建并开启zk客户端
         this.zkCli = CuratorFrameworkFactory.newClient(config.getZkUrl(), new ExponentialBackoffRetry(5000, 30));
         this.zkCli.start();
+
+        this.executorService = ThreadPoolGenerator.newThreadPoolDynamic(config.getCorePoolSize(), config.getMaxPoolSize(), config.getKeepAliveTime(), config.getThreadPoolQueueCapacity(), THREAD_NAME);
     }
 
     /**
@@ -282,7 +288,7 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
         List<ConsumerTask> consumerTasks = new ArrayList<>();
         currentConsumerTopicBrokerServerUrlsMap.forEach((topic, currentTopicBrokerServerUrls) -> {
             currentTopicBrokerServerUrls.forEach(brokerServerUrl -> {
-                ConsumerTask consumerTask = new ConsumerTask(getNettyClient().getChannel(brokerServerUrl), brokerServerUrl, topic, config);
+                ConsumerTask consumerTask = new ConsumerTask(getNettyClient().getChannel(brokerServerUrl), brokerServerUrl, topic, config, executorService);
                 consumerTaskMap.computeIfAbsent(topic, k -> new HashMap<>());
                 consumerTaskMap.get(topic).put(brokerServerUrl, consumerTask);
                 consumerTasks.add(consumerTask);
@@ -374,7 +380,7 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
                         // 当前正在运行（如果当前正在启动 false） && 当前遍历到的consumerId是自己
                         if (isRunning && ((ConsumerConfig)config).getConsumerId() == Integer.valueOf(consumerId)) {
                             // 添加新的消费任务，建立连接，并启动消费任务
-                            ConsumerTask consumerTask = new ConsumerTask(getNettyClient().getChannel(newBrokerServerUrl), newBrokerServerUrl, topic, (ConsumerConfig) config);
+                            ConsumerTask consumerTask = new ConsumerTask(getNettyClient().getChannel(newBrokerServerUrl), newBrokerServerUrl, topic, (ConsumerConfig) config, executorService);
                             consumerTaskMap.computeIfAbsent(topic, k -> new HashMap<>());
                             consumerTaskMap.get(topic).put(newBrokerServerUrl, consumerTask);
                             consumerTask.start();
@@ -422,4 +428,7 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
         return consumer;
     }
 
+    public ExecutorService getExecutorService() {
+        return executorService;
+    }
 }

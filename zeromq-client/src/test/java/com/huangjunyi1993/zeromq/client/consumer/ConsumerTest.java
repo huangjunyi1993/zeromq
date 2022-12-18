@@ -10,18 +10,33 @@ import org.junit.Test;
 public class ConsumerTest {
 
     @Test
-    public void test() throws Exception {
+    public void testConsumer1() throws Exception {
+        start(1, 1);
+    }
+
+    @Test
+    public void testConsumer2() throws Exception {
+        start(1, 2);
+    }
+
+    @Test
+    public void testConsumer3() throws Exception {
+        start(1, 3);
+    }
+
+    private void start(int groupId, int consumerId) throws Exception {
         ConsumerConfig consumerConfig = new ConsumerConfig();
-        consumerConfig.setGroupId(1);
-        consumerConfig.setConsumerId(1);
+        consumerConfig.setGroupId(groupId);
+        consumerConfig.setConsumerId(consumerId);
         consumerConfig.setBatch(100);
+        consumerConfig.setCorePoolSize(2);
+        consumerConfig.setMaxPoolSize(2);
         ZeroConsumerBootstrap zeroConsumerBootstrap = new ZeroConsumerBootstrap(consumerConfig);
         zeroConsumerBootstrap.register("hello", PrintlnConsumer.class);
         zeroConsumerBootstrap.register("world", PrintlnConsumer.class);
         if (zeroConsumerBootstrap.start()) {
             Thread.sleep(Integer.MAX_VALUE);
         }
-
     }
 
 }

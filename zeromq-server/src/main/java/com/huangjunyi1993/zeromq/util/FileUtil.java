@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.SUFFIX_INDEX;
 import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.SUFFIX_LOG;
+import static com.huangjunyi1993.zeromq.base.constants.ServerConstant.INDEX_ITEM_LENGTH;
 
 /**
  * 文件工具类
@@ -78,7 +79,7 @@ public class FileUtil {
      * @throws IOException
      */
     public static String createTopicDirAndNewIndexFIle(String dir, String topic) throws IOException {
-        return createTopicDirAndNewFIle(dir, topic, "index", 8 * 1000L);
+        return createTopicDirAndNewFIle(dir, topic, "index", INDEX_ITEM_LENGTH * GlobalConfiguration.get().getIndexFileCapacity());
     }
 
     /**
@@ -151,7 +152,7 @@ public class FileUtil {
         RandomAccessFile r = null;
         try {
             r = new RandomAccessFile(newIndexFileName, "rw");
-            r.setLength(8 * 1000L);
+            r.setLength(INDEX_ITEM_LENGTH * GlobalConfiguration.get().getIndexFileCapacity());
         } finally{
             if (r != null) {
                 r.close();

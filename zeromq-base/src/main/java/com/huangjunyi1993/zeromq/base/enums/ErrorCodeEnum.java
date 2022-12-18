@@ -16,6 +16,7 @@ public enum  ErrorCodeEnum {
     BATCH_ILLEGAL(8),
     ACK_TOPIC_IS_NULL(9),
     NO_CONSUMABLE_NEWS(10),
+    SERVER_INTERNAL_ERROR(11),
     ;
 
 

@@ -26,8 +26,8 @@ public class NettyServer {
         NioEventLoopGroup bossGroup = null;
         NioEventLoopGroup workerGroup = null;
         try {
-            bossGroup = new NioEventLoopGroup(1);
-            workerGroup = new NioEventLoopGroup();
+            bossGroup = new NioEventLoopGroup(GlobalConfiguration.get().getNettyBossGroupThreads());
+            workerGroup = new NioEventLoopGroup(GlobalConfiguration.get().getNettyWorkerGroupThreads());
 
             ServerBootstrap serverBootstrap = new ServerBootstrap();
             serverBootstrap.group(bossGroup, workerGroup)

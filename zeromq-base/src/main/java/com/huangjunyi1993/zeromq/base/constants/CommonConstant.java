@@ -16,4 +16,6 @@ public interface CommonConstant {
 
     String SUFFIX_INDEX = "index";
 
+    String THREAD_NAME = "zeromq-thread";
+
 }

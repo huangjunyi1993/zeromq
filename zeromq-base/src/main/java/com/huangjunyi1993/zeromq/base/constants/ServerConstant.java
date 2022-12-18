@@ -18,6 +18,14 @@ public interface ServerConstant {
 
     String FLUSH_STRATEGY_SYNC = "sync";
 
-    String DEFAULT_WRITE_STRATEGY = "sync";
+    String DEFAULT_WRITE_STRATEGY = "spin";
+
+    long INDEX_ITEM_LENGTH = 8L;
+
+    long LOG_HEAD_LENGTH = 8L;
+
+    String THREAD_NAME_WRITE = "zeromq-thread-write";
+
+    String THREAD_NAME_READ = "zeromq-thread-read";
 
 }

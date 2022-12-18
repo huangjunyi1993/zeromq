@@ -49,7 +49,7 @@ public class NettyClient {
     public static NettyClient open(AbstractConfig config) {
         EventLoopGroup eventExecutors = null;
         try {
-            eventExecutors = new NioEventLoopGroup();
+            eventExecutors = new NioEventLoopGroup(config.getNettyThreads());
             Bootstrap bootstrap = new Bootstrap();
             bootstrap.group(eventExecutors)
                     .channel(NioSocketChannel.class)

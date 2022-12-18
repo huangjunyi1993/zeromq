@@ -38,7 +38,7 @@ public class IOUtil {
     public static void writeLogAndIndex(byte[] bytes, int serializationType,
                                         String lastFile, String lastIndexFile,
                                         MappedByteBuffer logBuf, MappedByteBuffer indexBuf,
-                                        int logPosition, String flushStrategy) {
+                                        long logPosition, String flushStrategy) {
         LOGGER.info("==================> {} write the message log {} <==================", Thread.currentThread().getName(), lastFile);
         // 写入消息日志长度
         logBuf.putInt(bytes.length);

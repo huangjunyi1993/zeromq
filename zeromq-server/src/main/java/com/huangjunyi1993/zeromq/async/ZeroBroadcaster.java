@@ -8,7 +8,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * 服务端事件广播器
+ * 服务端事件广播器（暂时没有用到）
  * Created by huangjunyi on 2022/8/21.
  */
 public class ZeroBroadcaster implements Broadcaster {
