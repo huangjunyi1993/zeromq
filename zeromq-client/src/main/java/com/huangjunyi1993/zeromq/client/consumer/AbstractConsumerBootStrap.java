@@ -166,7 +166,7 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
             }
 
             // 自旋获取锁
-            while (!lock.acquire(10 * 1000, TimeUnit.SECONDS)) {}
+            while (!lock.acquire(10, TimeUnit.SECONDS)) {}
 
             // 从zk获取服务器信息
             byte[] bytes = null;
@@ -184,7 +184,9 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
         } catch (Exception e) {
             throw new ConsumerException("The consumer launch failed", e);
         } finally {
-            lock.release();
+            if (lock.isAcquiredInThisProcess()) {
+                lock.release();
+            }
         }
 
         // 睡5秒，等待同时启动的其他消费者rebalance
@@ -345,15 +347,27 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
                 byte[] bytes = nodeCache.getCurrentData().getData();
                 if (bytes != null && bytes.length != 0) {
 
-                    // 当前消费者客户端所有要订阅的主题
-                    List<String> topicLiSt = this.topicList;
+                    // 分布式锁，防止消费者客户端并发rebalance
+                    InterProcessLock lock = new InterProcessMutex(this.zkCli, "/lock/consumer");
 
-                    // 解析服务器信息
-                    List<BrokerServerUrl> brokerServerUrlList = ClientUtil.parseBrokerServerUrls(bytes);
+                    try {
+                        // 获取锁
+                        while (!lock.acquire(1, TimeUnit.SECONDS)) {}
 
-                    ConsumerConfig consumerConfig = (ConsumerConfig) this.config;
+                        // 当前消费者客户端所有要订阅的主题
+                        List<String> topicLiSt = this.topicList;
 
-                    rebalance(topicLiSt, brokerServerUrlList, consumerConfig, false);
+                        // 解析服务器信息
+                        List<BrokerServerUrl> brokerServerUrlList = ClientUtil.parseBrokerServerUrls(bytes);
+
+                        ConsumerConfig consumerConfig = (ConsumerConfig) this.config;
+
+                        rebalance(topicLiSt, brokerServerUrlList, consumerConfig, false);
+                    } finally {
+                        if (lock.isAcquiredInThisProcess()) {
+                            lock.release();
+                        }
+                    }
                 }
             }
         });
