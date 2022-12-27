@@ -24,13 +24,13 @@ public abstract class AbstractConfig {
     // 线程池核心线程数
     private int corePoolSize;
 
-    // 线程池最大线程数
+    // 线程池最大线程数 消费者设置无效
     private int maxPoolSize;
 
     // 非核心线程最大空闲时间
     private long keepAliveTime;
 
-    // 线程池队列容量
+    // 线程池队列容量 消费者设置无效
     private int threadPoolQueueCapacity;
 
     private int nettyThreads;

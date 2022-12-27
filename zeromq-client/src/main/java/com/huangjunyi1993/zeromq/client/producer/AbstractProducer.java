@@ -25,6 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 
 import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.TOPIC_DEFAULT;
@@ -199,7 +200,11 @@ public abstract class AbstractProducer implements Producer {
 
             // 从zk拉取服务器信息
             String path = "/brokers";
-            byte[] bytes = zkCli.getData().forPath(path);
+            byte[] bytes = null;
+            while (bytes == null || bytes.length == 0) {
+                LockSupport.parkNanos(1000 * 1000 * 1000L);
+                bytes = zkCli.getData().forPath(path);
+            }
 
             // 更新服务器列表
             List<BrokerServerUrl> brokerServerUrlList = updateBrokerServerUrls(bytes);
@@ -220,7 +225,9 @@ public abstract class AbstractProducer implements Producer {
             if (nodeCache.getCurrentData() != null) {
                 // 监听节点发生变化，重新拉取服务器信息，进行更新操作
                 byte[] bytes = nodeCache.getCurrentData().getData();
-                updateBrokerServerUrls(bytes);
+                if (bytes != null && bytes.length != 0) {
+                    updateBrokerServerUrls(bytes);
+                }
             }
         });
     }

@@ -65,4 +65,12 @@ public class ThreadPoolGenerator {
         return executorService;
     }
 
+    public static ExecutorService newConsumerThreadPool(int corePoolSize, long keepAliveTime, String threadName) {
+        return new ThreadPoolExecutor(corePoolSize, Integer.MAX_VALUE,
+                keepAliveTime, TimeUnit.MILLISECONDS,
+                new SynchronousQueue<>(),
+                r -> new Thread(r, threadName + "-" + threadSequenceNumberGenerator.getAndIncrement()),
+                new ThreadPoolExecutor.AbortPolicy());
+    }
+
 }

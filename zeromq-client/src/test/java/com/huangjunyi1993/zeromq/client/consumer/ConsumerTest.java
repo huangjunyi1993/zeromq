@@ -29,8 +29,7 @@ public class ConsumerTest {
         consumerConfig.setGroupId(groupId);
         consumerConfig.setConsumerId(consumerId);
         consumerConfig.setBatch(100);
-        consumerConfig.setCorePoolSize(2);
-        consumerConfig.setMaxPoolSize(2);
+        consumerConfig.setCorePoolSize(1);
         ZeroConsumerBootstrap zeroConsumerBootstrap = new ZeroConsumerBootstrap(consumerConfig);
         zeroConsumerBootstrap.register("hello", PrintlnConsumer.class);
         zeroConsumerBootstrap.register("world", PrintlnConsumer.class);

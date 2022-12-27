@@ -102,6 +102,7 @@ public class ConsumerTask implements Runnable {
     }
 
     public void start() {
+//        new Thread(this).start();
         executorService.execute(this);
     }
 }
