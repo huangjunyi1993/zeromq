@@ -14,14 +14,12 @@ public class ClientUtil {
 
     /**
      * 解析获取服务端ip端口信息
-     * @param bytes
+     * @param brokers
      * @return
      */
-    public static List<BrokerServerUrl> parseBrokerServerUrls(byte[] bytes) {
-        String string = new String(bytes);
-        // zk存储的服务器信息：ip:port,ip:port,ip:port
-        String[] brokerServerUrls = string.split(",");
-        return Arrays.stream(brokerServerUrls).map(brokerServerUrl -> {
+    public static List<BrokerServerUrl> parseBrokerServerUrls(List<String> brokers) {
+        // zk的服务器信息：/zero/brokers/{ip}:{port}
+        return brokers.stream().map(brokerServerUrl -> {
             String[] strings = brokerServerUrl.split(":");
             return new BrokerServerUrl(strings[0], Integer.valueOf(strings[1]));
         }).collect(Collectors.toList());

@@ -16,6 +16,7 @@ import com.huangjunyi1993.zeromq.client.util.ClientUtil;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.cache.NodeCache;
+import org.apache.curator.framework.recipes.cache.PathChildrenCache;
 import org.apache.curator.framework.recipes.locks.InterProcessLock;
 import org.apache.curator.framework.recipes.locks.InterProcessMutex;
 import org.apache.curator.retry.ExponentialBackoffRetry;
@@ -27,11 +28,11 @@ import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 
-import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.THREAD_NAME;
-import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.TOPIC_DEFAULT;
+import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.*;
 import static com.huangjunyi1993.zeromq.base.constants.MessageHeadConstant.MESSAGE_HEAD_TOPIC;
 
 /**
@@ -61,11 +62,11 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
     // 是否正在运行
     private boolean isRunning;
 
-    // 主题 消费者 服务器 双层映射表 topic => consumerId => brokerUrls
-    private Map<String, Map<String, List<BrokerServerUrl>>> topicConsumerIdUrlsMap = new ConcurrentHashMap<>();
+    // 主题与服务器的映射表 topic => brokerUrls
+    private Map<String, List<BrokerServerUrl>> topicBrokerUrlsMap = new ConcurrentHashMap<>();
 
-    // netty客户端
-    private NettyClient nettyClient;
+    // 当前连接的brokers
+    private Set<BrokerServerUrl> connectBrokers = new HashSet<>();
 
     private ExecutorService executorService;
 
@@ -155,27 +156,30 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
         List<String> topicLiSt = this.topicList;
 
         // 分布式锁，防止消费者客户端并发rebalance
-        InterProcessLock lock = new InterProcessMutex(this.zkCli, "/lock/consumer");
+        InterProcessLock lock = new InterProcessMutex(this.zkCli, ZK_PATH_CONSUMER_LOCK);
         try {
 
-            // 自旋检查/brokers节点是否存在
-            Stat brokersNodeStat = zkCli.checkExists().forPath("/brokers");
+            // 在zk上消费者注册节点 /zero/consumer/{groupId}/{consumerId}
+            registerConsumerNodeOnZK((ConsumerConfig) this.config);
+
+            // 自旋检查/zero/brokers节点是否存在
+            Stat brokersNodeStat = zkCli.checkExists().forPath(ZK_PATH_BROKERS);
             while (brokersNodeStat == null) {
                 LockSupport.parkNanos(1000 * 1000 * 1000L);
-                brokersNodeStat = zkCli.checkExists().forPath("/brokers");
+                brokersNodeStat = zkCli.checkExists().forPath(ZK_PATH_BROKERS);
             }
 
             // 自旋获取锁
             while (!lock.acquire(10, TimeUnit.SECONDS)) {}
 
             // 从zk获取服务器信息
-            byte[] bytes = null;
-            while (bytes == null || bytes.length == 0) {
-                bytes = zkCli.getData().forPath("/brokers");
+            List<String> brokers = null;
+            while (brokers == null || brokers.size() == 0) {
+                brokers = zkCli.getChildren().forPath(ZK_PATH_BROKERS);
             }
 
             // 解析服务器信息
-            List<BrokerServerUrl> brokerServerUrlList = ClientUtil.parseBrokerServerUrls(bytes);
+            List<BrokerServerUrl> brokerServerUrlList = ClientUtil.parseBrokerServerUrls(brokers);
             ConsumerConfig consumerConfig = (ConsumerConfig) this.config;
 
             // 消费者rebalance（分配各自消费的broker）
@@ -192,14 +196,48 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
         // 睡5秒，等待同时启动的其他消费者rebalance
         LockSupport.parkNanos(5 * 1000 * 1000 * 1000L);
 
-        // 监听/brokers节点，触发更新
-        addWatcher("/brokers");
+        // 监听/zero/brokers节点，触发更新
+        addWatcherBrokers();
+
+        // 监听/zero/consumers/{groupId}，触发更新
+        addWatcherConsumers((ConsumerConfig) this.config);
 
         // 创建并运行消费任务
-        runTask(topicList, topicConsumerIdUrlsMap, (ConsumerConfig) this.config);
-        // 修复运行标志 当前正在运行
+        runTask();
+
+        // 修改运行标志 当前正在运行
         isRunning = true;
+
+        // 启动定时任务，检查没有消费任务的连接
+        startCheckTask();
+
         return true;
+    }
+
+    private void startCheckTask() {
+        ScheduledThreadPoolExecutor scheduledThreadPoolExecutor = new ScheduledThreadPoolExecutor(1);
+        scheduledThreadPoolExecutor.scheduleWithFixedDelay(this::closeClientIfNoTask, 5, 5, TimeUnit.SECONDS);
+    }
+
+    private void registerConsumerNodeOnZK(ConsumerConfig config) throws Exception {
+        // /zero/consumer/{groupId}/{consumerId}
+        String path = String.format(ZK_PATH_CONSUMER + "/%s", config.getGroupId(), config.getConsumerId());
+        Stat stat = zkCli.checkExists().forPath(path);
+        if (stat == null) {
+            zkCli.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath(path);
+        }
+    }
+
+    private List<String> getAllConsumerFromZK(ConsumerConfig config) throws Exception {
+        List<String> consumers = new ArrayList<>();
+        // /zero/consumer/{groupId}
+        String path = String.format(ZK_PATH_CONSUMER, config.getGroupId());
+        Stat stat = zkCli.checkExists().forPath(path);
+        if (stat != null) {
+            List<String> groupChildrens = zkCli.getChildren().forPath(path);
+            consumers.addAll(groupChildrens);
+        }
+        return consumers;
     }
 
     private void rebalance(List<String> topicLiSt, List<BrokerServerUrl> brokerServerUrlList, ConsumerConfig consumerConfig, boolean addWatcher) {
@@ -207,22 +245,18 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
         Map<String, String> topicResultMap = new HashMap<>();
         topicLiSt.forEach(topic -> {
 
-            // zk：/topic/{topicName}/consumers/{groupId}
-            String path = String.format("/topic/%s/consumers/%s", topic, consumerConfig.getGroupId());
+            // zk：/zero/topic/{topicName}/consumers/{groupId}
+            String path = String.format(ZK_PATH_CONSUMER_TOPIC, topic, consumerConfig.getGroupId());
             try {
-                // 注册到zk上当前topic当前group的所有消费者id列表
-                List<String> consumerIdList = new ArrayList<>();
+
                 Stat stat = zkCli.checkExists().forPath(path);
-                if (stat != null) {
-                    byte[] bytes1 = zkCli.getData().forPath(path);
-                    String json = new String(bytes1, StandardCharsets.UTF_8);
-                    JsonElement jsonElement = new JsonParser().parse(json);
-                    JsonObject jsonObject = jsonElement.getAsJsonObject();
-                    consumerIdList.addAll(jsonObject.keySet());
-                } else {
+                if (stat == null) {
                     // 节点路径不存在，创建
-                    zkCli.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath(path);
+                    zkCli.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(path);
                 }
+
+                // 注册到zk上的所有消费者id列表
+                List<String> consumerIdList = getAllConsumerFromZK(consumerConfig);
 
                 // 消费者id列表不包含当前消费者，添加
                 if (!consumerIdList.contains(String.valueOf(consumerConfig.getConsumerId()))) {
@@ -259,7 +293,7 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
 
         // rebalance结果处理
         topicResultMap.forEach((topic, result) -> {
-            String path = String.format("/topic/%s/consumers/%s", topic, consumerConfig.getGroupId());
+            String path = String.format(ZK_PATH_CONSUMER_TOPIC, topic, consumerConfig.getGroupId());
             try {
                 // 1、循环推到zk
                 zkCli.setData().forPath(path, result.getBytes(StandardCharsets.UTF_8));
@@ -267,7 +301,7 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
                 updateTopicConsumerIdUrlsMap(topic, result);
                 // 3、添加监听，后面有其他消费者加入，触发更新双层映射表
                 if (addWatcher) {
-                    addWatcher(topic, path);
+                    addWatcherTopic(topic, path);
                 }
             } catch (Exception e) {
                 throw new ConsumerException("Failed to update the consumer group node data", e);
@@ -275,43 +309,22 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
         });
     }
 
-    private NettyClient getNettyClient() {
-        if (nettyClient == null) {
-            synchronized (this) {
-                if (nettyClient == null) {
-                    nettyClient = NettyClient.open(this.config);
-                }
-            }
-        }
-        return nettyClient;
-    }
-
-    protected void runTask(List<String> topicList, Map<String, Map<String, List<BrokerServerUrl>>> topicConsumerIdUrlsMap, ConsumerConfig config) {
-
-        // 当前消费者订阅的主题 => 服务器列表
-        Map<String, Set<BrokerServerUrl>> currentConsumerTopicBrokerServerUrlsMap = new HashMap<>();
-        topicList.forEach(topic -> {
-            Map<String, List<BrokerServerUrl>> consumerIdUrsMap = topicConsumerIdUrlsMap.get(topic);
-            if (consumerIdUrsMap != null) {
-                List<BrokerServerUrl> serverUrls = consumerIdUrsMap.get(String.valueOf(config.getConsumerId()));
-                if (serverUrls != null && serverUrls.size() > 0) {
-                    currentConsumerTopicBrokerServerUrlsMap.computeIfAbsent(topic, k -> new HashSet<>());
-                    currentConsumerTopicBrokerServerUrlsMap.get(topic).addAll(serverUrls);
-                }
-            }
-        });
-
+    protected void runTask() {
         // 创建任务 建立连接 添加到任务表中 启动任务
-        List<ConsumerTask> consumerTasks = new ArrayList<>();
-        currentConsumerTopicBrokerServerUrlsMap.forEach((topic, currentTopicBrokerServerUrls) -> {
-            currentTopicBrokerServerUrls.forEach(brokerServerUrl -> {
-                ConsumerTask consumerTask = new ConsumerTask(getNettyClient().getChannel(brokerServerUrl), brokerServerUrl, topic, config, executorService);
-                consumerTaskMap.computeIfAbsent(topic, k -> new HashMap<>());
-                consumerTaskMap.get(topic).put(brokerServerUrl, consumerTask);
-                consumerTasks.add(consumerTask);
-                consumerTask.start();
+        topicBrokerUrlsMap.forEach((topic, brokerServerUrls) -> {
+            brokerServerUrls.forEach(brokerServerUrl -> {
+                createAndStartConsumerTask(topic, brokerServerUrl);
             });
         });
+
+    }
+
+    private void createAndStartConsumerTask(String topic, BrokerServerUrl brokerServerUrl) {
+        ConsumerTask consumerTask = new ConsumerTask(NettyClient.getChannel(config, brokerServerUrl), brokerServerUrl, topic, (ConsumerConfig) config, executorService);
+        consumerTaskMap.computeIfAbsent(topic, k -> new HashMap<>());
+        consumerTaskMap.get(topic).put(brokerServerUrl, consumerTask);
+        connectBrokers.add(brokerServerUrl);
+        consumerTask.start();
     }
 
     /**
@@ -320,7 +333,7 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
      * @param path zk上指定topic和group的路径
      * @throws Exception
      */
-    private void addWatcher(String topic, String path) throws Exception {
+    private void addWatcherTopic(String topic, String path) throws Exception {
         // 监听当前topic下当前group分配的变动，触发更新
         NodeCache nodeCache = new NodeCache(this.zkCli, path);
         nodeCache.start();
@@ -336,53 +349,105 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
 
     /**
      * 对/brokers节点添加监听，当新的broker上线时，触发rebalance
-     * @param path /brokers
      * @throws Exception
      */
-    private void addWatcher(String path) throws Exception {
-        NodeCache nodeCache = new NodeCache(this.zkCli, path);
-        nodeCache.start();
-        nodeCache.getListenable().addListener(() -> {
-            if (nodeCache.getCurrentData() != null) {
-                byte[] bytes = nodeCache.getCurrentData().getData();
-                if (bytes != null && bytes.length != 0) {
+    private void addWatcherBrokers() throws Exception {
+        PathChildrenCache cache = new PathChildrenCache(this.zkCli, ZK_PATH_BROKERS, true);
+        cache.start();
+        cache.getListenable().addListener((client, event) -> tryLockAndRebalance());
+    }
 
-                    // 分布式锁，防止消费者客户端并发rebalance
-                    InterProcessLock lock = new InterProcessMutex(this.zkCli, "/lock/consumer");
+    /**
+     * 监听/zero/consumer/{groupId}，当组内有消费者上下线时，触发rebalance
+     * @param config
+     */
+    private void addWatcherConsumers(ConsumerConfig config) throws Exception {
+        PathChildrenCache pathChildrenCache = new PathChildrenCache(this.zkCli, String.format(ZK_PATH_CONSUMER, config.getGroupId()), true);
+        pathChildrenCache.start();
+        pathChildrenCache.getListenable().addListener((client, event) -> tryLockAndRebalance());
+    }
 
-                    try {
-                        // 获取锁
-                        while (!lock.acquire(1, TimeUnit.SECONDS)) {}
+    private void tryLockAndRebalance() throws Exception {
+        // 分布式锁，防止消费者客户端并发rebalance
+        InterProcessLock lock = new InterProcessMutex(this.zkCli, ZK_PATH_CONSUMER_LOCK);
 
-                        // 当前消费者客户端所有要订阅的主题
-                        List<String> topicLiSt = this.topicList;
+        try {
+            // 获取锁成功才操作，只有一个消费者成功获取锁，进行rebalance
+            if (lock.acquire(1, TimeUnit.SECONDS)) {
+                // 当前消费者客户端所有要订阅的主题
+                List<String> topicLiSt = this.topicList;
 
-                        // 解析服务器信息
-                        List<BrokerServerUrl> brokerServerUrlList = ClientUtil.parseBrokerServerUrls(bytes);
+                // 解析服务器信息
+                List<String> brokers = zkCli.getChildren().forPath(ZK_PATH_BROKERS);
+                List<BrokerServerUrl> brokerServerUrlList = ClientUtil.parseBrokerServerUrls(brokers);
 
-                        ConsumerConfig consumerConfig = (ConsumerConfig) this.config;
+                ConsumerConfig consumerConfig = (ConsumerConfig) this.config;
 
-                        rebalance(topicLiSt, brokerServerUrlList, consumerConfig, false);
-                    } finally {
-                        if (lock.isAcquiredInThisProcess()) {
-                            lock.release();
-                        }
-                    }
+                rebalance(topicLiSt, brokerServerUrlList, consumerConfig, false);
+
+            }
+        } finally {
+            if (lock.isAcquiredInThisProcess()) {
+                lock.release();
+            }
+        }
+    }
+
+    /**
+     * 关闭已经没有消费者任务的客户端
+     */
+    private void closeClientIfNoTask() {
+        // 统计当前消费者连接的broker，各有多少任务数，记到brokerTaskCountMap中
+        HashMap<BrokerServerUrl, Integer> brokerTaskCountMap = new HashMap<>();
+        Map<String, Map<BrokerServerUrl, ConsumerTask>> consumerTaskMap = this.consumerTaskMap;
+        for (Map<BrokerServerUrl, ConsumerTask> brokerTaskMap : consumerTaskMap.values()) {
+            Set<BrokerServerUrl> brokerServerUrls = brokerTaskMap.keySet();
+            for (BrokerServerUrl brokerServerUrl : brokerServerUrls) {
+                if (brokerTaskCountMap.containsKey(brokerServerUrl)) {
+                    brokerTaskCountMap.put(brokerServerUrl, brokerTaskCountMap.get(brokerServerUrl) + 1);
+                } else {
+                    brokerTaskCountMap.put(brokerServerUrl, 1);
                 }
             }
-        });
+        }
+
+        // 已经没有消费任务的broker，关闭客户端
+        Set<BrokerServerUrl> connectBrokers = this.connectBrokers;
+        List<BrokerServerUrl> removeBrokers = new ArrayList<>();
+        for (BrokerServerUrl connectBroker : connectBrokers) {
+            if (!brokerTaskCountMap.containsKey(connectBroker)) {
+                removeBrokers.add(connectBroker);
+            }
+        }
+        connectBrokers.removeAll(removeBrokers);
+        NettyClient.shutDown(removeBrokers);
     }
 
 
     private void updateTopicConsumerIdUrlsMap(String topic, String data) {
         // 创建外围映射表
-        topicConsumerIdUrlsMap.computeIfAbsent(topic, k -> new HashMap<>());
-        // 内层映射表
-        Map<String, List<BrokerServerUrl>> consumerIdUrlsMap = topicConsumerIdUrlsMap.get(topic);
+        topicBrokerUrlsMap.computeIfAbsent(topic, k -> new ArrayList<>());
+
         // 解析当前topic的rebalance结果
         JsonElement jsonElement = new JsonParser().parse(data);
         JsonObject jsonObject = jsonElement.getAsJsonObject();
         Set<String> consumerIds = jsonObject.keySet();
+
+        // 如果rebalance后的结果，没有分配到当前消费者，停止该消费者对该topic所有broker的消费
+        if (consumerIds == null || consumerIds.size() == 0 || !consumerIds.contains(((ConsumerConfig)config).getConsumerId())) {
+            Map<BrokerServerUrl, ConsumerTask> brokerServerUrlConsumerTaskMap = consumerTaskMap.get(topic);
+            if (brokerServerUrlConsumerTaskMap != null) {
+                for (Map.Entry<BrokerServerUrl, ConsumerTask> entry : brokerServerUrlConsumerTaskMap.entrySet()) {
+                    ConsumerTask consumerTask = entry.getValue();
+                    consumerTask.shutdown();
+                }
+                // 从消费者任务表删除
+                consumerTaskMap.remove(topic);
+                // 从映射表中删除
+                topicBrokerUrlsMap.remove(topic);
+            }
+        }
+
         // 遍历：{"consumerId1": "brokerUrl1,brokerUrl2", "consumerId2": "brokerUrl3,brokerUrl4"}
         consumerIds.forEach(consumerId -> {
 
@@ -398,12 +463,16 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
                 }).collect(Collectors.toList());
 
                 // 不再分配给自己的服务器，停止消费任务，不再向该broker拉取消息
-                // 当前正在运行（如果当前正在启动 false） && 当前遍历到的consumerId是自己 && 内层映射表中有分配给自己的服务器
-                if (isRunning && ((ConsumerConfig)config).getConsumerId() == Integer.valueOf(consumerId) && consumerIdUrlsMap.get(consumerId) != null) {
+                // 当前正在运行（如果当前正在启动 false） && 当前遍历到的consumerId是自己
+                if (isRunning && ((ConsumerConfig)config).getConsumerId() == Integer.valueOf(consumerId)) {
                     // 不再分配给自己的服务器
                     List<BrokerServerUrl> diffBrokerServerUrls = new ArrayList<>();
-                    // 由自己负责的服务器
-                    List<BrokerServerUrl> brokerServerUrls = consumerIdUrlsMap.get(consumerId);
+                    // 原来由自己负责的服务器
+                    List<BrokerServerUrl> brokerServerUrls = topicBrokerUrlsMap.get(topic);
+                    if (brokerServerUrls == null) {
+                        brokerServerUrls = new ArrayList<>();
+                        topicBrokerUrlsMap.put(topic, brokerServerUrls);
+                    }
                     brokerServerUrls = brokerServerUrls.stream().filter(brokerServerUrl -> {
                         if (newBrokerServerUrls.contains(brokerServerUrl)) {
                             return true;
@@ -411,10 +480,10 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
                         diffBrokerServerUrls.add(brokerServerUrl);
                         return false;
                     }).collect(Collectors.toList());
-                    // 由自己负责的服务器，放入内层映射表
-                    consumerIdUrlsMap.put(consumerId, brokerServerUrls);
+                    // 依然由自己负责的服务器，放回内层映射表
+                    topicBrokerUrlsMap.put(topic, brokerServerUrls);
 
-                    // 不再分配给自己的服务器，并移除消费任务，并停止
+                    // 不再分配给自己的服务器，移除消费任务，并停止
                     Map<BrokerServerUrl, ConsumerTask> brokerServerUrlConsumerTaskMap = null;
                     if ((brokerServerUrlConsumerTaskMap = consumerTaskMap.get(topic)) != null) {
                         for (BrokerServerUrl diffBrokerServerUrl : diffBrokerServerUrls) {
@@ -428,22 +497,20 @@ public abstract class AbstractConsumerBootStrap implements Consumer {
 
                 // 由自己负责的服务器，添加新的消费任务，并启动
                 newBrokerServerUrls.forEach(newBrokerServerUrl -> {
-                    List<BrokerServerUrl> brokerServerUrls;
-                    if (consumerIdUrlsMap.get(consumerId) == null) {
+                    List<BrokerServerUrl> brokerServerUrls = topicBrokerUrlsMap.get(topic);
+                    if (brokerServerUrls == null) {
                         brokerServerUrls = new ArrayList<>();
-                        brokerServerUrls.add(newBrokerServerUrl);
-                        consumerIdUrlsMap.put(consumerId, brokerServerUrls);
-                    } else if (!(brokerServerUrls = consumerIdUrlsMap.get(consumerId)).contains(newBrokerServerUrl)){
+                        topicBrokerUrlsMap.put(topic, brokerServerUrls);
+                    }
+                    if (!brokerServerUrls.contains(newBrokerServerUrl)){
                         // 由自己负责的服务器，内层映射表没有，添加
                         brokerServerUrls.add(newBrokerServerUrl);
                     }
+
                     // 当前正在运行（如果当前正在启动 false） && 当前遍历到的consumerId是自己
                     if (isRunning && ((ConsumerConfig)config).getConsumerId() == Integer.valueOf(consumerId)) {
                         // 添加新的消费任务，建立连接，并启动消费任务
-                        ConsumerTask consumerTask = new ConsumerTask(getNettyClient().getChannel(newBrokerServerUrl), newBrokerServerUrl, topic, (ConsumerConfig) config, executorService);
-                        consumerTaskMap.computeIfAbsent(topic, k -> new HashMap<>());
-                        consumerTaskMap.get(topic).put(newBrokerServerUrl, consumerTask);
-                        consumerTask.start();
+                        createAndStartConsumerTask(topic, newBrokerServerUrl);
                     }
                 });
             }

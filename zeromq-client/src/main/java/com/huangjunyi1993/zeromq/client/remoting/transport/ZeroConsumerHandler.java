@@ -31,7 +31,7 @@ import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.RESPONSE;
  * Created by huangjunyi on 2022/8/19.
  */
 @ChannelHandler.Sharable
-public class ZeroConsumerHandler extends SimpleChannelInboundHandler<ZeroProtocol> {
+public class ZeroConsumerHandler extends CloneableChannelHandler<ZeroProtocol> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroConsumerHandler.class);
 
@@ -108,5 +108,15 @@ public class ZeroConsumerHandler extends SimpleChannelInboundHandler<ZeroProtoco
 
             });
         }
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        LOGGER.info("channel inactive");
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        LOGGER.error("happen exception: ", cause);
     }
 }

@@ -39,9 +39,9 @@ public class ProducerTest {
 
             initMessage(zeroMessage1, zeroMessage2, jdkSerializer, hessian2Serializer, i++, j++, k++);
 
-            zeroProducer.sendMessage(zeroMessage1);
-            zeroProducer.sendMessage(zeroMessage2);
-
+            boolean b1 = zeroProducer.sendMessage(zeroMessage1);
+            boolean b2 = zeroProducer.sendMessage(zeroMessage2);
+            LOGGER.info("send message b1: {} b2: {}", b1, b2);
         }
     }
 
@@ -89,10 +89,10 @@ public class ProducerTest {
 
             initMessage(zeroMessage1, zeroMessage2, jdkSerializer, hessian2Serializer, i++, j++, k++);
 
-            zeroProducer.sendMessageAsync(zeroMessage1, response -> LOGGER.info("received response: {}" + response));
-            zeroProducer.sendMessageAsync(zeroMessage2, response -> LOGGER.info("received response: {}" + response));
+            boolean b1 = zeroProducer.sendMessageAsync(zeroMessage1, response -> LOGGER.info("received response: {}" + response));
+            boolean b2 = zeroProducer.sendMessageAsync(zeroMessage2, response -> LOGGER.info("received response: {}" + response));
+            LOGGER.info("send message b1: {} b2: {}", b1, b2);
             if (k % 100 == 0) LockSupport.parkNanos(2000000000);
-
         }
     }
 

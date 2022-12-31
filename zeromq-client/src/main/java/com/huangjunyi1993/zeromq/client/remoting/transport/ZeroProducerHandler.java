@@ -8,6 +8,8 @@ import com.huangjunyi1993.zeromq.client.remoting.support.ZeroFuture;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.RESPONSE;
 
@@ -16,7 +18,10 @@ import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.RESPONSE;
  * Created by huangjunyi on 2022/8/14.
  */
 @ChannelHandler.Sharable
-public class ZeroProducerHandler extends SimpleChannelInboundHandler<ZeroProtocol> {
+public class ZeroProducerHandler extends CloneableChannelHandler<ZeroProtocol> {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ZeroProducerHandler.class);
+
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, ZeroProtocol protocol) throws Exception {
         // 生产者发送消息后，接收到服务端响应
@@ -28,5 +33,15 @@ public class ZeroProducerHandler extends SimpleChannelInboundHandler<ZeroProtoco
             // 触发消息发送回执的回调，唤醒阻塞等待的线程
             ZeroFuture.received(response);
         }
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        LOGGER.info("channel inactive");
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        LOGGER.error("happen exception: ", cause);
     }
 }

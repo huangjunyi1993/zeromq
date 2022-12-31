@@ -15,6 +15,8 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,8 +25,11 @@ import java.util.Map;
  */
 public class NettyClient {
 
-    // IO通道缓存，服务器信息 => Channel
-    private volatile Map<BrokerServerUrl, Channel> CHANNEL_MAP = new HashMap<>();
+    // 服务器信息 => NettyClient
+    private static final Map<BrokerServerUrl, NettyClient> NETTY_CLIENT_MAP = new HashMap<>();
+
+    // IO通道缓存
+    private volatile Channel channelCache;
 
     // NIO事件循环组，相当于线程池
     private EventLoopGroup eventLoopGroup;
@@ -34,6 +39,8 @@ public class NettyClient {
 
     // netty启动引导器
     private Bootstrap bootstrap;
+
+    public static final Object CLIENT_LOCK_OBJ = new Object();
 
     private NettyClient(EventLoopGroup eventLoopGroup, AbstractConfig config, Bootstrap bootstrap) {
         this.eventLoopGroup = eventLoopGroup;
@@ -46,11 +53,13 @@ public class NettyClient {
      * @param config
      * @return
      */
-    public static NettyClient open(AbstractConfig config) {
+    private static void open(AbstractConfig config, BrokerServerUrl brokerServerUrl) {
         EventLoopGroup eventExecutors = null;
+        Bootstrap bootstrap = null;
+        NettyClient nettyClient = null;
         try {
             eventExecutors = new NioEventLoopGroup(config.getNettyThreads());
-            Bootstrap bootstrap = new Bootstrap();
+            bootstrap = new Bootstrap();
             bootstrap.group(eventExecutors)
                     .channel(NioSocketChannel.class)
                     .handler(new ChannelInitializer<SocketChannel>() {
@@ -62,43 +71,61 @@ public class NettyClient {
                             socketChannel.pipeline().addLast(new ZeroProtocalDecoder());
                             // 添加注册到全局配置中的所有处理器
                             config.getChannelHandlers().forEach(
-                                    channelHandler -> socketChannel.pipeline().addLast(channelHandler));
+                                    channelHandler -> socketChannel.pipeline().addLast(channelHandler.clone()));
                         }
                     });
-            return new NettyClient(eventExecutors, config, bootstrap);
+            nettyClient = new NettyClient(eventExecutors, config, bootstrap);
         } catch (Exception e) {
             if (eventExecutors != null) {
                 eventExecutors.shutdownGracefully();
             }
             throw new RemotingException("An exception occurred while initializing the Netty client", e);
         }
+
+        nettyClient.connect(brokerServerUrl);
+        NETTY_CLIENT_MAP.put(brokerServerUrl, nettyClient);
+    }
+
+    private void connect(BrokerServerUrl brokerServerUrl) {
+        try {
+            // 与对应服务器建立连接
+            ChannelFuture channelFuture = bootstrap.connect(new InetSocketAddress(brokerServerUrl.getHost(), brokerServerUrl.getPort())).sync();
+            // 缓存IO通道
+            channelCache = channelFuture.channel();
+        } catch (InterruptedException e) {
+            throw new RemotingException(String.format("An exception occurred while connect to server: %s:%s", brokerServerUrl.getHost(), brokerServerUrl.getPort()));
+        }
     }
 
     /**
-     * 根据服务器信息，获取一条IO通道
+     * 根据服务器信息，获取IO通道
+     *
+     * @param config
      * @param brokerServerUrl 服务器信息
      * @return
      */
-    public Channel getChannel(BrokerServerUrl brokerServerUrl) {
+    public static Channel getChannel(AbstractConfig config, BrokerServerUrl brokerServerUrl) {
         Channel channel = null;
-        // 如果不存在服务器对应的通道，加双重检测锁，并创建IO通道
-        if (!CHANNEL_MAP.containsKey(brokerServerUrl)) {
-            synchronized (CHANNEL_MAP) {
-                if (!CHANNEL_MAP.containsKey(brokerServerUrl)) {
-                    ChannelFuture channelFuture = null;
-                    try {
-                        // 与对应服务器建立连接
-                        channelFuture = bootstrap.connect(new InetSocketAddress(brokerServerUrl.getHost(), brokerServerUrl.getPort())).sync();
-                        channel = channelFuture.channel();
-                        // 缓存IO通道
-                        CHANNEL_MAP.put(brokerServerUrl, channel);
-                    } catch (InterruptedException e) {
-                        throw new RemotingException("An exception occurred while connect to broker server", e);
-                    }
+        // 如果不存在服务器对应的客户端，加双重检测锁，并开启客户端
+        if (!NETTY_CLIENT_MAP.containsKey(brokerServerUrl)) {
+            synchronized (CLIENT_LOCK_OBJ) {
+                if (!NETTY_CLIENT_MAP.containsKey(brokerServerUrl)) {
+                    NettyClient.open(config, brokerServerUrl);
+                    channel = NETTY_CLIENT_MAP.get(brokerServerUrl).channelCache;
                 }
             }
         } else {
-            channel = CHANNEL_MAP.get(brokerServerUrl);
+            NettyClient nettyClient = NETTY_CLIENT_MAP.get(brokerServerUrl);
+            channel = nettyClient.channelCache;
+            if (channel == null) {
+                synchronized (nettyClient) {
+                    channel = nettyClient.channelCache;
+                    if (channel == null) {
+                        nettyClient.connect(brokerServerUrl);
+                        channel = nettyClient.channelCache;
+                    }
+                }
+            }
         }
         return channel;
     }
@@ -106,8 +133,24 @@ public class NettyClient {
     /**
      * 关闭netty客户端
      */
-    public void close() {
+    private void close() {
+        this.channelCache.close();
         eventLoopGroup.shutdownGracefully();
+        BrokerServerUrl selfBrokerServerUrl = null;
+        for (Map.Entry<BrokerServerUrl, NettyClient> entry : NETTY_CLIENT_MAP.entrySet()) {
+            if (entry.getValue() == this) {
+                selfBrokerServerUrl = entry.getKey();
+            }
+        }
+        NETTY_CLIENT_MAP.remove(selfBrokerServerUrl);
     }
 
+    public static void shutDown(List<BrokerServerUrl> downBrokerServerUrlList) {
+        downBrokerServerUrlList.forEach(brokerServerUrl -> {
+            NettyClient nettyClient = NETTY_CLIENT_MAP.get(brokerServerUrl);
+            if (nettyClient != null) {
+                nettyClient.close();
+            }
+        });
+    }
 }

@@ -1,5 +1,6 @@
 package com.huangjunyi1993.zeromq.client.config;
 
+import com.huangjunyi1993.zeromq.client.remoting.transport.CloneableChannelHandler;
 import io.netty.channel.ChannelHandler;
 
 import java.util.ArrayList;
@@ -16,7 +17,7 @@ public abstract class AbstractConfig {
     protected String zkUrl;
 
     // 处理器
-    protected List<ChannelHandler> channelHandlers;
+    protected List<CloneableChannelHandler> channelHandlers;
 
     // 等待时间
     private long timeout;
@@ -54,11 +55,11 @@ public abstract class AbstractConfig {
         this.zkUrl = zkUrl;
     }
 
-    public List<ChannelHandler> getChannelHandlers() {
+    public List<CloneableChannelHandler> getChannelHandlers() {
         return channelHandlers;
     }
 
-    public void addChannelHandler(ChannelHandler channelHandler) {
+    public void addChannelHandler(CloneableChannelHandler channelHandler) {
         if (Objects.isNull(channelHandlers)) {
             channelHandlers = new ArrayList<>();
         }

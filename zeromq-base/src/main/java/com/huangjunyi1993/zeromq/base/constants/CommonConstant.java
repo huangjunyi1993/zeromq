@@ -18,4 +18,12 @@ public interface CommonConstant {
 
     String THREAD_NAME = "zeromq-thread";
 
+    String ZK_PATH_BROKERS = "/zero/brokers";
+
+    String ZK_PATH_CONSUMER_LOCK = "/zero/lock/consumer";
+
+    String ZK_PATH_CONSUMER_TOPIC = "/zero/topic/%s/consumers/%s";
+
+    String ZK_PATH_CONSUMER = "/zero/consumer/%s";
+
 }

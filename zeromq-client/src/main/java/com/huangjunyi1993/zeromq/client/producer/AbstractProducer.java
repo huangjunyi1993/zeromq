@@ -16,7 +16,13 @@ import io.netty.channel.Channel;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.cache.NodeCache;
+import org.apache.curator.framework.recipes.cache.PathChildrenCache;
+import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
+import org.apache.curator.framework.recipes.cache.PathChildrenCacheListener;
 import org.apache.curator.retry.ExponentialBackoffRetry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +35,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 
 import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.TOPIC_DEFAULT;
+import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.ZK_PATH_BROKERS;
 import static com.huangjunyi1993.zeromq.base.constants.MessageHeadConstant.*;
 import static com.huangjunyi1993.zeromq.base.constants.MessageHeadConstant.MESSAGE_HEAD_SERIALIZATION_TYPE;
 import static com.huangjunyi1993.zeromq.base.enums.MessageTypeEnum.MESSAGE;
@@ -40,6 +47,8 @@ import static com.huangjunyi1993.zeromq.base.enums.SerializationTypeEnum.JDK_NAT
  */
 public abstract class AbstractProducer implements Producer {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(AbstractProducer.class);
+
     // 消息id生成器
     private static AtomicLong MESSAGE_ID_GENERATOR = new AtomicLong();
 
@@ -49,14 +58,13 @@ public abstract class AbstractProducer implements Producer {
     // zk客户端
     private CuratorFramework zkCli;
 
-    // netty客户端
-    private NettyClient nettyClient;
-
     // 服务端url列表
     private List<BrokerServerUrl> brokerServerUrlList = new CopyOnWriteArrayList<>();
 
     // 计数器表，topic => 计数器
     private Map<String, AtomicInteger> TOPIC_COUNTER_MAP = new ConcurrentHashMap<>();
+
+    private static final int DEFAULT_SEND_WAIT = 5;
 
     public AbstractProducer(AbstractConfig config) {
         // 保存全局配置
@@ -65,8 +73,6 @@ public abstract class AbstractProducer implements Producer {
         this.zkCli = CuratorFrameworkFactory.newClient(config.getZkUrl(), new ExponentialBackoffRetry(5000, 30));
         // 开启key客户端
         this.zkCli.start();
-        // 开启netty客户端
-        this.nettyClient = NettyClient.open(config);
     }
 
     @Override
@@ -101,7 +107,15 @@ public abstract class AbstractProducer implements Producer {
             // 根据topic和routingKey，进行消息路由，确定目标Broker
             BrokerServerUrl url = routing((String) message.getHead(MESSAGE_HEAD_TOPIC), (String) message.getHead(MESSAGE_HEAD_ROUTING_KEY));
             // 获取连接到对应服务器的IO通道
-            Channel channel = nettyClient.getChannel(url);
+            Channel channel = NettyClient.getChannel(config, url);
+            if (channel == null) {
+                LOGGER.info("channel is null!");
+                return false;
+            }
+            if (!channel.isActive()) {
+                LOGGER.info("channel is not active!");
+                return false;
+            }
             // 创建一个回执，回执会缓存到全局回执表
             ZeroFuture zeroFuture = ZeroFuture.newProducerFuture(message);
             // 真正发送消息
@@ -117,15 +131,19 @@ public abstract class AbstractProducer implements Producer {
             } else {
                 // 阻塞式发送
                 long timeout = this.config.getTimeout();
-                Object result = timeout > 0L ? zeroFuture.get(timeout, TimeUnit.MILLISECONDS) : zeroFuture.get();
-                response[0] = (Response) result;
-                if (response[0].isSuccess()) {
-                    return true;
+                Object result = timeout > 0L ? zeroFuture.get(timeout, TimeUnit.MILLISECONDS) : zeroFuture.get(DEFAULT_SEND_WAIT, TimeUnit.SECONDS);
+                if (result != null) {
+                    response[0] = (Response) result;
+                    if (response[0].isSuccess()) {
+                        return true;
+                    }
                 }
+                LOGGER.info("send message failed!");
                 return false;
             }
         } catch (Exception e) {
             // 发送消息发生错误
+            LOGGER.error("send message failed!", e);
             postOnError(message, response[0], e);
             return false;
         } finally {
@@ -199,15 +217,15 @@ public abstract class AbstractProducer implements Producer {
         try {
 
             // 从zk拉取服务器信息
-            String path = "/brokers";
-            byte[] bytes = null;
-            while (bytes == null || bytes.length == 0) {
+            String path = ZK_PATH_BROKERS;
+            List<String> brokers = null;
+            while (brokers == null || brokers.size() == 0) {
                 LockSupport.parkNanos(1000 * 1000 * 1000L);
-                bytes = zkCli.getData().forPath(path);
+                brokers = zkCli.getChildren().forPath(path);
             }
 
             // 更新服务器列表
-            List<BrokerServerUrl> brokerServerUrlList = updateBrokerServerUrls(bytes);
+            List<BrokerServerUrl> brokerServerUrlList = updateBrokerServerUrls(brokers);
 
             // 重新注册监听
             addWatcher(path);
@@ -219,28 +237,29 @@ public abstract class AbstractProducer implements Producer {
     }
 
     private void addWatcher(String path) throws Exception {
-        NodeCache nodeCache = new NodeCache(this.zkCli, path);
-        nodeCache.start();
-        nodeCache.getListenable().addListener(() -> {
-            if (nodeCache.getCurrentData() != null) {
-                // 监听节点发生变化，重新拉取服务器信息，进行更新操作
-                byte[] bytes = nodeCache.getCurrentData().getData();
-                if (bytes != null && bytes.length != 0) {
-                    updateBrokerServerUrls(bytes);
-                }
-            }
+        PathChildrenCache cache = new PathChildrenCache(this.zkCli, path, true);
+        cache.start();
+        cache.getListenable().addListener((client, event) -> {
+            // 监听节点发生变化，重新拉取服务器信息，进行更新操作
+            List<String> brokers = client.getChildren().forPath(path);
+            updateBrokerServerUrls(brokers);
         });
     }
 
-    private List<BrokerServerUrl> updateBrokerServerUrls(byte[] bytes) {
+    private List<BrokerServerUrl> updateBrokerServerUrls(List<String> brokers) {
         // 解析服务器列表
-        List<BrokerServerUrl> newBrokerServerUrlList = ClientUtil.parseBrokerServerUrls(bytes);
+        List<BrokerServerUrl> newBrokerServerUrlList = ClientUtil.parseBrokerServerUrls(brokers);
+
+        // 过滤出下线的brokers，关闭客户端
+        List<BrokerServerUrl> downBrokerServerUrlList = this.brokerServerUrlList.stream().filter(brokerServerUrl -> !newBrokerServerUrlList.contains(brokerServerUrl))
+                .collect(Collectors.toList());
+        NettyClient.shutDown(downBrokerServerUrlList);
 
         // 过滤出当前的服务器列表中，需要保留的服务器
         List<BrokerServerUrl> oldBrokerServerUrlList = this.brokerServerUrlList.stream()
                 .filter(newBrokerServerUrlList::contains).collect(Collectors.toList());
 
-        // 现清空服务器列表
+        // 先清空服务器列表
         this.brokerServerUrlList.clear();
         this.brokerServerUrlList.addAll(oldBrokerServerUrlList);
         this.brokerServerUrlList.addAll(newBrokerServerUrlList.stream()

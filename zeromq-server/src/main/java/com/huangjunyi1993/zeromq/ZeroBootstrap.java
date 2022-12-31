@@ -28,7 +28,10 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
+
+import static com.huangjunyi1993.zeromq.base.constants.CommonConstant.ZK_PATH_BROKERS;
 
 /**
  * 启动类
@@ -115,38 +118,16 @@ public class ZeroBootstrap {
         // 创建并启动zk客户端
         CuratorFramework zkCli = CuratorFrameworkFactory.newClient(config.getZkUrl(), new ExponentialBackoffRetry(5000, 30));
         zkCli.start();
-        // 加分布式锁，防止多个服务端并发注册
-        InterProcessLock lock = new InterProcessMutex(zkCli, "/lock/broker");
-        try {
-
-            // 自旋加锁
-            while (!lock.acquire(10 * 1000, TimeUnit.SECONDS)) {}
-
-            // 创建服务器注册路径是否存在，不存在则创建
-            Stat stat = zkCli.checkExists().forPath("/brokers");
-            if (stat == null) {
-                zkCli.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath("/brokers", "".getBytes());
-            }
-
-            // 获取zk上服务器注册节点的信息 ip:port,ip:port
-            byte[] bytes = zkCli.getData().forPath("/brokers");
-            Set<String> urlSet = new HashSet<>();
-            String brokers = new String(bytes);
-            if (!"".equals(brokers)) {
-                if (brokers.contains(",")) {
-                    Collections.addAll(urlSet, brokers.split(","));
-                } else {
-                    urlSet.add(brokers);
-                }
-            }
-
-            // 添加自己的ip端口，写入到zk上的服务器注册节点
-            urlSet.add(getHostIpAndPort(config));
-            brokers = urlSet.stream().collect(Collectors.joining(","));
-            zkCli.setData().forPath("/brokers", brokers.getBytes());
-        } finally {
-            lock.release();
+        String path = String.format(ZK_PATH_BROKERS + "/%s", getHostIpAndPort(config));
+        // 创建服务器注册路径是否存在，不存在则创建
+        Stat stat = zkCli.checkExists().forPath(path);
+        if (stat != null) {
+            // 上次启动在zk上的缓存还在，先清除
+            zkCli.delete().forPath(path);
+            // 睡3秒，等待消费者清除旧的连接
+            LockSupport.parkNanos(3 * 1000 * 1000 * 1000L);
         }
+        zkCli.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath(path);
     }
 
     private static String getHostIpAndPort(GlobalConfiguration config) {
